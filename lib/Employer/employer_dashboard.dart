@@ -99,18 +99,62 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
         backgroundColor: const Color(0xFFF0F5FF),
         // Add drawer to the scaffold
         drawer: _buildDrawer(context),
-        // Add app bar with menu icon
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
+          toolbarHeight: 70, // Taller app bar for more pronounced curve
+          flexibleSpace: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.blue.shade600, Colors.indigo.shade700],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(30),
+                bottomRight: Radius.circular(30),
+              ),
+            ),
+          ),
           leading: IconButton(
-            icon: const Icon(Icons.menu, color: Color(0xFF5B6BF8), size: 28),
+            icon: const Icon(Icons.menu, color: Colors.white, size: 24),
             onPressed: () {
               scaffoldKey.currentState?.openDrawer();
             },
           ),
           automaticallyImplyLeading: false,
+          title: Row(
+            children: [
+              const SizedBox(
+                width: 8,
+              ), // Add some spacing between the icon and text
+              const Text(
+                'ShiftHour',
+                style: TextStyle(
+                  fontFamily: 'Inter Tight',
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(
+                Icons.notifications_outlined,
+                color: Colors.white,
+                size: 24,
+              ),
+              onPressed: () {
+                print('Notifications pressed');
+              },
+            ),
+            const SizedBox(width: 8),
+          ],
         ),
+
+        // Add app bar with menu icon
         bottomNavigationBar: const ShiftHourBottomNavigation(),
         body: SafeArea(
           top: true,
@@ -118,114 +162,9 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
             mainAxisSize: MainAxisSize.max,
             children: [
               // Header
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
-                child: Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF5B6BF8), Color(0xFF8B65D9)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        blurRadius: 4,
-                        color: const Color(0x10000000),
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.max,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // Logo and App Name
-                        Row(
-                          children: [
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.calendar_today,
-                                color: Color(0xFF5B6BF8),
-                                size: 24,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            const Text(
-                              'ShiftHour',
-                              style: TextStyle(
-                                fontFamily: 'Inter Tight',
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                        // User info and avatar
-                        Row(
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                const Text(
-                                  'Welcome back,',
-                                  style: TextStyle(
-                                    fontFamily: 'Inter',
-                                    color: Colors.white70,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                Text(
-                                  _userName,
-                                  style: TextStyle(
-                                    color: Colors.black,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(width: 12),
-                            Container(
-                              width: 45,
-                              height: 45,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 2,
-                                ),
-                                image: const DecorationImage(
-                                  fit: BoxFit.cover,
-                                  image: NetworkImage(
-                                    'https://source.unsplash.com/200x200/?portrait,woman',
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
               // Verification Alert
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+                padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
                 child: Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
@@ -311,7 +250,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                                 icon: Icons.work_rounded,
                                 iconColor: const Color(0xFF5B6BF8),
                                 value: '24',
-                                label: 'Total Jobs',
+                                label: 'Total Shifts',
                                 growthValue: '+10%',
                                 growthColor: const Color(0xFF5B6BF8),
                               ),
@@ -355,7 +294,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                                 context,
                                 icon: Icons.payments_rounded,
                                 iconColor: Colors.green,
-                                value: '\$4,325',
+                                value: '\₹4,325',
                                 label: 'Pending Payments',
                                 growthValue: '+7%',
                                 growthColor: Colors.green,
@@ -442,7 +381,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                                   icon: Icons.description_outlined,
                                   iconBackgroundColor: const Color(0xFFE0F8F3),
                                   iconColor: Colors.teal,
-                                  title: 'Job Application',
+                                  title: 'Shit Application',
                                   description:
                                       '5 new applications for Barista position',
                                   timeAgo: '4h ago',
@@ -474,161 +413,6 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                           ),
                         ),
                         const SizedBox(height: 24),
-
-                        // Quick Actions
-                        Container(
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                blurRadius: 4,
-                                color: const Color(0x10000000),
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Quick Actions',
-                                  style: TextStyle(
-                                    fontFamily: 'Inter Tight',
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                GridView.count(
-                                  crossAxisCount: 3,
-                                  mainAxisSpacing: 16,
-                                  crossAxisSpacing: 16,
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  children: [
-                                    _buildActionCard(
-                                      context,
-                                      icon: Icons.add_circle_outline,
-                                      title: 'Post a New Job',
-                                      color: const Color(0xFF5B6BF8),
-                                    ),
-                                    _buildActionCard(
-                                      context,
-                                      icon: Icons.event_note,
-                                      title: 'Schedule Interviews',
-                                      color: Colors.teal,
-                                    ),
-                                    _buildActionCard(
-                                      context,
-                                      icon: Icons.people_alt_outlined,
-                                      title: 'View Candidates',
-                                      color: Colors.orange,
-                                    ),
-                                    _buildActionCard(
-                                      context,
-                                      icon:
-                                          Icons.account_balance_wallet_outlined,
-                                      title: 'Manage Payments',
-                                      color: Colors.green,
-                                    ),
-                                    _buildActionCard(
-                                      context,
-                                      icon: Icons.bar_chart,
-                                      title: 'Generate Reports',
-                                      color: Colors.amber,
-                                    ),
-                                    _buildActionCard(
-                                      context,
-                                      icon: Icons.support_agent,
-                                      title: 'Contact Support',
-                                      color: Colors.red,
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-
-                        // Upcoming Interviews
-                        Container(
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                blurRadius: 4,
-                                color: const Color(0x10000000),
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text(
-                                      'Upcoming Interviews',
-                                      style: TextStyle(
-                                        fontFamily: 'Inter Tight',
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    TextButton(
-                                      onPressed: () {
-                                        print('Schedule More pressed');
-                                      },
-                                      style: TextButton.styleFrom(
-                                        foregroundColor: const Color(
-                                          0xFF5B6BF8,
-                                        ),
-                                      ),
-                                      child: const Text(
-                                        'Schedule More',
-                                        style: TextStyle(
-                                          fontFamily: 'Inter',
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                _buildInterviewCard(
-                                  context,
-                                  name: 'David Wilson',
-                                  position: 'Barista',
-                                  date: 'Today',
-                                  time: '2:30 PM',
-                                  imageUrl:
-                                      'https://source.unsplash.com/200x200/?portrait,man',
-                                ),
-                                const SizedBox(height: 16),
-                                _buildInterviewCard(
-                                  context,
-                                  name: 'Emily Rodriguez',
-                                  position: 'Cashier',
-                                  date: 'Tomorrow',
-                                  time: '10:00 AM',
-                                  imageUrl:
-                                      'https://source.unsplash.com/200x200/?portrait,woman,2',
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -653,7 +437,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
             DrawerHeader(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [Color(0xFF5B6BF8), Color(0xFF8B65D9)],
+                  colors: [Colors.blue, Colors.lightBlueAccent],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -730,7 +514,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
             _buildDrawerItem(
               context,
               icon: Icons.work_outline_rounded,
-              title: 'Manage Jobs',
+              title: 'Manage',
               onTap: () {
                 Get.back();
                 Get.to(() => Manage_Jobs_HomePage());
@@ -879,7 +663,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
   }) {
     return InkWell(
       onTap: () {
-        print('$label tab pressed');
+        print('₹label tab pressed');
       },
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -1060,7 +844,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
   }) {
     return InkWell(
       onTap: () {
-        print('$title pressed');
+        print('₹title pressed');
       },
       child: Container(
         decoration: BoxDecoration(
