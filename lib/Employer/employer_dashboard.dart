@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get/get_core/src/get_main.dart';
+import 'package:shifthour_employeer/Employer/Business%20Kyc/kyc.dart';
 import 'package:shifthour_employeer/Employer/Employee%20%20workers/Eworkers_dashboard.dart';
 import 'package:shifthour_employeer/Employer/Manage%20Jobs/manage_jobs_dashboard.dart';
+import 'package:shifthour_employeer/Employer/payments/payments.model.dart';
 import 'package:shifthour_employeer/const/Bottom_Navigation.dart'
     show NavigationController, NavigationMixin, ShiftHourBottomNavigation;
 import 'package:shifthour_employeer/login.dart';
@@ -17,6 +19,7 @@ class EmployerDashboard extends StatefulWidget {
 
 class _EmployerDashboardState extends State<EmployerDashboard> {
   final scaffoldKey = GlobalKey<ScaffoldState>();
+  bool _isBusinessVerified = false;
 
   bool _isLoading = true;
   String _userName = "";
@@ -36,9 +39,11 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
       // Load employer data
       _loadUserData();
       _loadProfileData();
+      _loadkyc();
     });
   }
 
+  final PaymentsController _paymentsController = Get.put(PaymentsController());
   Future<void> _loadUserData() async {
     try {
       setState(() => _isLoading = true);
@@ -119,6 +124,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
 
         // Then update state with confirmed field name
         setState(() {
+          // _isBusinessVerified = response['is_verified'] ?? false;
           // Make sure you use the exact field name from the output above
           _userName = response['contact_name'] ?? 'Employer';
           _usercompany =
@@ -135,6 +141,253 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
     } finally {
       // setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _loadkyc() async {
+    try {
+      setState(() => _isLoading = true);
+
+      // Get current user's email
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null || user.email == null) {
+        throw Exception('User not logged in or email not available');
+      }
+
+      final email = user.email!;
+
+      try {
+        // Use .select() without .single() to handle no rows
+        final response =
+            await Supabase.instance.client
+                .from('business_verifications')
+                .select('*')
+                .eq('email', email)
+                .maybeSingle(); // Use maybeSingle instead of single
+
+        // Check if response is null
+        if (response == null) {
+          print('No verification record found for email: $email');
+          setState(() {
+            _isBusinessVerified = false;
+          });
+          return;
+        }
+
+        // Log all key-value pairs
+        print('DEBUG: BUSINESS VERIFICATION DATA:');
+        response.forEach((key, value) {
+          print('$key: $value');
+        });
+
+        // Update state with verification status
+        setState(() {
+          _isBusinessVerified = response['is_verified'] ?? false;
+        });
+      } catch (e) {
+        print('ERROR in _loadkyc: $e');
+        setState(() {
+          _isBusinessVerified = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading KYC data: $e');
+      setState(() {
+        _isBusinessVerified = false;
+      });
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchRecentActivities() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return [];
+
+      final activitiesResponse = await Supabase.instance.client
+          .from('recent_activities')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', ascending: false)
+          .limit(4);
+
+      return activitiesResponse;
+    } catch (e) {
+      print('Error fetching recent activities: $e');
+      return [];
+    }
+  }
+
+  Widget _buildRecentActivitySection() {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _fetchRecentActivities(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'No recent activities',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+          );
+        }
+
+        return Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                blurRadius: 4,
+                color: const Color(0x10000000),
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Recent Activity',
+                      style: TextStyle(
+                        fontFamily: 'Inter Tight',
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        // Navigate to full activity log
+                      },
+                      child: Text('View All'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                ...snapshot.data!
+                    .map(
+                      (activity) => _buildActivityItem(
+                        context,
+                        icon: _getActivityIcon(activity['activity_type']),
+                        iconBackgroundColor: _getActivityBackgroundColor(
+                          activity['activity_type'],
+                        ),
+                        iconColor: _getActivityIconColor(
+                          activity['activity_type'],
+                        ),
+                        title: activity['title'],
+                        description: activity['description'],
+                        timeAgo: _formatTimeAgo(activity['created_at']),
+                      ),
+                    )
+                    .toList(),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  IconData _getActivityIcon(String activityType) {
+    switch (activityType) {
+      case 'job_posted':
+        return Icons.work_outline;
+      case 'worker_assigned':
+        return Icons.person_add_outlined;
+      case 'check_in':
+        return Icons.login_rounded;
+      case 'check_out':
+        return Icons.logout_rounded;
+      default:
+        return Icons.notifications_outlined;
+    }
+  }
+
+  Color _getActivityBackgroundColor(String activityType) {
+    switch (activityType) {
+      case 'job_posted':
+        return Color(0xFFE6EEFF);
+      case 'worker_assigned':
+        return Color(0xFFFFF1E6);
+      case 'check_in':
+        return Color(0xFFE0F8F3);
+      case 'check_out':
+        return Color(0xFFFEF0E6);
+      default:
+        return Color(0xFFF5F5F5);
+    }
+  }
+
+  Color _getActivityIconColor(String activityType) {
+    switch (activityType) {
+      case 'job_posted':
+        return Color(0xFF5B6BF8);
+      case 'worker_assigned':
+        return Colors.orange;
+      case 'check_in':
+        return Colors.teal;
+      case 'check_out':
+        return Colors.deepOrange;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _formatTimeAgo(String timestamp) {
+    final DateTime dateTime = DateTime.parse(timestamp);
+    final Duration difference = DateTime.now().difference(dateTime);
+
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else {
+      return '${difference.inDays}d ago';
+    }
+  }
+
+  void _openBusinessVerificationForm() {
+    // Show the form as a full-screen dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          insetPadding: EdgeInsets.zero,
+          clipBehavior: Clip.antiAliasWithSaveLayer,
+          child: Container(
+            width: double.infinity,
+            height: double.infinity,
+            child: StandaloneVerificationForm(
+              onComplete: () {
+                // After verification, refresh the data to update the UI
+                _loadProfileData();
+                _loadUserData();
+              },
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Widget build(BuildContext context) {
@@ -212,63 +465,64 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
             children: [
               // Header
               // Verification Alert
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
-                child: Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.amber.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.warning_amber_rounded,
-                              color: Colors.amber.shade800,
-                              size: 24,
+              if (!_isBusinessVerified)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
+                  child: Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                color: Colors.amber.shade800,
+                                size: 24,
+                              ),
+                              const SizedBox(width: 12),
+                              const Text(
+                                'Your business verification is incomplete',
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontWeight: FontWeight.w300,
+                                ),
+                              ),
+                            ],
+                          ),
+                          ElevatedButton(
+                            onPressed: _openBusinessVerificationForm,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: Colors.amber.shade800,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              minimumSize: const Size(0, 36),
                             ),
-                            const SizedBox(width: 12),
-                            const Text(
-                              'Your business verification is incomplete',
+                            child: const Text(
+                              'Complete Now',
                               style: TextStyle(
                                 fontFamily: 'Inter',
-                                fontWeight: FontWeight.w300,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                          ],
-                        ),
-                        ElevatedButton(
-                          onPressed: () {
-                            print('Complete verification pressed');
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: Colors.amber.shade800,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            minimumSize: const Size(0, 36),
                           ),
-                          child: const Text(
-                            'Complete Now',
-                            style: TextStyle(
-                              fontFamily: 'Inter',
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
 
               // Main Content
               Expanded(
@@ -344,8 +598,10 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                                 context,
                                 icon: Icons.payments_rounded,
                                 iconColor: Colors.green,
-                                value: '\₹4,325',
-                                label: 'Pending Payments',
+                                value:
+                                    _paymentsController
+                                        .getFormattedWalletBalance(), // Use this method
+                                label: 'Wallet',
                                 growthValue: '+7%',
                                 growthColor: Colors.green,
                               ),
@@ -353,115 +609,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                           ],
                         ),
                         const SizedBox(height: 24),
-
-                        // Recent Activity
-                        Container(
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                blurRadius: 4,
-                                color: const Color(0x10000000),
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text(
-                                      'Recent Activity',
-                                      style: TextStyle(
-                                        fontFamily: 'Inter Tight',
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    TextButton(
-                                      onPressed: () {
-                                        print('View All pressed');
-                                      },
-                                      style: TextButton.styleFrom(
-                                        backgroundColor: const Color(
-                                          0xFFE6EEFF,
-                                        ),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            20,
-                                          ),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 8,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        'View All',
-                                        style: TextStyle(
-                                          color: Colors.blue.shade700,
-                                          fontFamily: 'Inter',
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                _buildActivityItem(
-                                  context,
-                                  icon: Icons.login_rounded,
-                                  iconBackgroundColor: const Color(0xFFE6EEFF),
-                                  iconColor: const Color(0xFF5B6BF8),
-                                  title: 'Worker Check-in',
-                                  description:
-                                      'John Smith checked in at Downtown Cafe',
-                                  timeAgo: '2h ago',
-                                ),
-                                const SizedBox(height: 16),
-                                _buildActivityItem(
-                                  context,
-                                  icon: Icons.description_outlined,
-                                  iconBackgroundColor: const Color(0xFFE0F8F3),
-                                  iconColor: Colors.teal,
-                                  title: 'Shit Application',
-                                  description:
-                                      '5 new applications for Barista position',
-                                  timeAgo: '4h ago',
-                                ),
-                                const SizedBox(height: 16),
-                                _buildActivityItem(
-                                  context,
-                                  icon: Icons.check_circle_outline,
-                                  iconBackgroundColor: const Color(0xFFFFF1E6),
-                                  iconColor: Colors.orange,
-                                  title: 'Shift Completion',
-                                  description:
-                                      'Maria Garcia completed her shift at Main Street Store',
-                                  timeAgo: '6h ago',
-                                ),
-                                const SizedBox(height: 16),
-                                _buildActivityItem(
-                                  context,
-                                  icon: Icons.payments_outlined,
-                                  iconBackgroundColor: const Color(0xFFE8F9E8),
-                                  iconColor: Colors.green,
-                                  title: 'Payment Processing',
-                                  description:
-                                      'Weekly payroll processed for 32 workers',
-                                  timeAgo: 'Yesterday',
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                        _buildRecentActivitySection(),
                         const SizedBox(height: 24),
                       ],
                     ),
@@ -564,7 +712,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
             _buildDrawerItem(
               context,
               icon: Icons.work_outline_rounded,
-              title: 'Manage',
+              title: 'Shifts',
               onTap: () {
                 Get.back();
                 Get.to(() => Manage_Jobs_HomePage());

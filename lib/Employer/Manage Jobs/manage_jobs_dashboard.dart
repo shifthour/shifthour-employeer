@@ -909,6 +909,8 @@ class JobCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     // Debug the available fields
     print('JobCard - Available fields: ${job.keys.toList()}');
 
@@ -948,7 +950,6 @@ class JobCard extends StatelessWidget {
         }
       }
     }
-
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 16),
@@ -965,21 +966,31 @@ class JobCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top section: Job title, pay rate and favorite icon
+            // Top section: Shift ID, pay rate and favorite icon
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Job Title
+                // Shift ID in place of title
                 Expanded(
-                  child: Text(
-                    job["job_title"] ?? "Untitled Job",
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 20,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.primaryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Shift ID: $shiftId',
+                      style: TextStyle(
+                        color: theme.primaryColor,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ),
-
+                SizedBox(width: 10),
                 // Pay Rate with Container
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -1011,6 +1022,18 @@ class JobCard extends StatelessWidget {
                   },
                 ),
               ],
+            ),
+
+            // Job Title below shift ID
+            Padding(
+              padding: const EdgeInsets.only(top: 12, bottom: 12),
+              child: Text(
+                job["job_title"] ?? "Untitled Job",
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 20,
+                ),
+              ),
             ),
 
             // Status Badge - UPDATED: Always show worker assignment badge if a worker is assigned
@@ -1084,8 +1107,6 @@ class JobCard extends StatelessWidget {
               ),
             ),
 
-            // Company with icon
-
             // UPDATED: Always display worker name if a worker is assigned
             if (hasWorkerAssigned)
               Padding(
@@ -1112,28 +1133,8 @@ class JobCard extends StatelessWidget {
                   ],
                 ),
               ),
-            // Shift ID Badge
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.purple.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  "Shift ID: $shiftId",
-                  style: TextStyle(
-                    color: Colors.purple.shade700,
-                    fontWeight: FontWeight.w500,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ), // View Details Button (right-aligned)
+
+            // View Details Button (right-aligned)
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [

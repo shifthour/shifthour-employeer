@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shifthour_employeer/Employer/employer_dashboard.dart';
+import 'package:shifthour_employeer/const/Activity_log.dart';
 import 'package:shifthour_employeer/const/Bottom_Navigation.dart';
 import 'package:shifthour_employeer/const/Standard_Appbar.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -142,7 +143,9 @@ class WorkerApplicationsController extends GetxController {
         const Center(child: CircularProgressIndicator()),
         barrierDismissible: false,
       );
-
+      await ActivityLogger.logShiftCancellation(
+        application as Map<String, dynamic>,
+      );
       // Check if shift can be cancelled (before 24 hours)
       final shiftResponse =
           await supabase
@@ -334,12 +337,14 @@ class WorkerApplicationsController extends GetxController {
   // Add this helper method to show a confirmation dialog
 
   // Complete implementation of _performCheckIn
+  // Complete implementation of _performCheckIn
   Future<void> _performCheckIn(Map<String, dynamic> application) async {
     final appId = application['id'].toString();
 
     try {
       // First verify the worker exists in job_seekers table
       final workerId = application['worker_id'] ?? application['user_id'];
+      await ActivityLogger.logWorkerCheckIn(application);
 
       // Check if the worker exists in job_seekers table
       final workerExists =
@@ -348,6 +353,15 @@ class WorkerApplicationsController extends GetxController {
               .select('id')
               .eq('id', workerId)
               .maybeSingle();
+
+      // Update application status to In Progress
+      if (application['shift_id'] != null) {
+        await supabase
+            .from('worker_job_applications')
+            .update({'application_status': 'In Progress'})
+            .eq('shift_id', application['shift_id'])
+            .eq('id', application['id']);
+      }
 
       // If worker doesn't exist in job_seekers, we need to handle this case
       if (workerExists == null) {
@@ -420,9 +434,8 @@ class WorkerApplicationsController extends GetxController {
 
       rethrow;
     }
-  }
+  } // Complete implementation of _performCheckOut
 
-  // Complete implementation of _performCheckOut
   Future<void> _performCheckOut(
     Map<String, dynamic>? checkInRecord,
     int onTimeRating,
@@ -474,6 +487,12 @@ class WorkerApplicationsController extends GetxController {
         // .eq('id', applicationId);
       }
 
+      if (checkInRecord != null) {
+        await ActivityLogger.logWorkerCheckOut(
+          checkInRecord,
+          // feedback: feedback
+        );
+      }
       // Check if worker_id exists before updating worker ratings
       if (checkInRecord['worker_id'] != null) {
         // Optionally, update worker's overall ratings
@@ -583,6 +602,52 @@ class WorkerApplicationsController extends GetxController {
         child: Text(status == 'checked_in' ? 'Check Out' : 'Check In'),
       );
     });
+  }
+
+  bool isUpcomingShift(Map<String, dynamic> application) {
+    try {
+      // Get current date and time
+      final now = DateTime.now();
+
+      // Parse shift date from the application
+      DateTime? shiftDate;
+      if (application['date'] != null) {
+        shiftDate = DateTime.parse(application['date'].toString());
+      } else if (application['shift_date'] != null) {
+        shiftDate = DateTime.parse(application['shift_date'].toString());
+      }
+
+      // If no date is available, we can't determine if it's upcoming
+      if (shiftDate == null) {
+        return false;
+      }
+
+      // Parse time from string like "10:00 AM" to DateTime
+      DateTime shiftTime;
+      if (application['start_time'] != null) {
+        shiftTime = _parseTime(application['start_time'].toString());
+      } else if (application['shift_start_time'] != null) {
+        shiftTime = _parseTime(application['shift_start_time'].toString());
+      } else {
+        // Default to start of day if no time specified
+        shiftTime = DateTime(2022, 1, 1, 0, 0);
+      }
+
+      // Combine date and time
+      final shiftDateTime = DateTime(
+        shiftDate.year,
+        shiftDate.month,
+        shiftDate.day,
+        shiftTime.hour,
+        shiftTime.minute,
+      );
+
+      // Check if the shift is in the future
+      return shiftDateTime.isAfter(now);
+    } catch (e) {
+      print('Error determining if shift is upcoming: $e');
+      return false; // Default to not showing cancel button if there's an error
+    }
   }
 
   Future<void> refreshApplications() async {
@@ -1366,7 +1431,7 @@ class WorkerApplicationsScreen extends StatelessWidget {
     );
   }
 
-  // Replace the _buildApplicationCard method in WorkerApplicationsScreen with this updated version
+  //
   Widget _buildApplicationCard(
     BuildContext context,
     Map<String, dynamic> application,
@@ -1403,13 +1468,18 @@ class WorkerApplicationsScreen extends StatelessWidget {
       case 'cancelled':
         statusColor = Colors.grey;
         break;
+      case 'in progress':
+        statusColor = Colors.blue;
+        break;
       default:
         statusColor = Colors.blue;
     }
 
-    // Check if cancelled to disable check-in button
-    final isCancelled = status.toString().toLowerCase() == 'cancelled';
-
+    // Check if cancelled or status is upcoming
+    final bool isCancelled = status.toString().toLowerCase() == 'cancelled';
+    final bool isCompleted = status.toString().toLowerCase() == 'completed';
+    final bool isInProgress = status.toString().toLowerCase() == 'in progress';
+    final bool isUpcoming = controller.isUpcomingShift(application);
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
@@ -1437,7 +1507,7 @@ class WorkerApplicationsScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    'Job ID: ${application['shift_id']}',
+                    'Shift ID: ${application['shift_id']}',
                     style: TextStyle(
                       color: theme.primaryColor,
                       fontWeight: FontWeight.w500,
@@ -1551,11 +1621,8 @@ class WorkerApplicationsScreen extends StatelessWidget {
               runSpacing: 8, // vertical spacing between "runs" or rows
               alignment: WrapAlignment.end,
               children: [
-                // View Details Button
-
-                // Cancel Shift Button - NEW BUTTON
-                // Only show if not already cancelled
-                if (status.toString().toLowerCase() != 'cancelled')
+                // Cancel Shift Button - Show only for upcoming shifts that are not cancelled
+                if (isUpcoming && !isCancelled && !isCompleted && !isInProgress)
                   ElevatedButton(
                     onPressed:
                         () => controller.cancelShift(application, context),
@@ -1564,6 +1631,7 @@ class WorkerApplicationsScreen extends StatelessWidget {
                     ),
                     child: Text('Cancel Shift'),
                   ),
+                // View Details Button
                 ElevatedButton(
                   onPressed: () => controller.viewDetails(application),
                   style: ElevatedButton.styleFrom(

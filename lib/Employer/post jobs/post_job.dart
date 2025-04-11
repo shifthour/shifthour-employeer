@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:intl/intl.dart';
 import 'package:shifthour_employeer/Employer/payments/employeer_payments_dashboard.dart';
+import 'package:shifthour_employeer/const/Activity_log.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PostShiftScreen extends StatefulWidget {
@@ -41,7 +42,7 @@ class _PostShiftScreenState extends State<PostShiftScreen> {
   TimeOfDay? selectedStartTime;
   TimeOfDay? selectedEndTime;
   bool _isLoading = false;
-
+  final TextEditingController _hourlyRateController = TextEditingController();
   @override
   void dispose() {
     _ShiftTitleController.dispose();
@@ -58,7 +59,20 @@ class _PostShiftScreenState extends State<PostShiftScreen> {
     _websiteController.dispose();
     _dressCodeController.dispose();
     _positionsController.dispose();
+
     super.dispose();
+  }
+
+  void initState() {
+    super.initState();
+    // Add listener to hourly rate to calculate total pay automatically
+    _hourlyRateController.addListener(() {
+      if (selectedHours != null) {
+        final hourlyRate = double.tryParse(_hourlyRateController.text) ?? 0;
+        final totalPayRate = hourlyRate * selectedHours!;
+        _payRateController.text = totalPayRate.toStringAsFixed(2);
+      }
+    });
   }
 
   // Method to pick date
@@ -113,7 +127,6 @@ class _PostShiftScreenState extends State<PostShiftScreen> {
     }
   }
 
-  // New method to calculate end time based on start time and hours
   void _calculateEndTime() {
     if (selectedStartTime != null && selectedHours != null) {
       // Convert start time to minutes
@@ -229,7 +242,6 @@ class _PostShiftScreenState extends State<PostShiftScreen> {
     );
   }
 
-  // Extracted hours dropdown to a separate method for reusability
   Widget _buildHoursDropdown() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -245,7 +257,7 @@ class _PostShiftScreenState extends State<PostShiftScreen> {
         ),
         const SizedBox(height: 8),
         DropdownButtonFormField<int>(
-          isExpanded: true, // This helps prevent overflow
+          isExpanded: true,
           value: selectedHours,
           decoration: InputDecoration(
             hintText: 'Select Hours',
@@ -290,6 +302,8 @@ class _PostShiftScreenState extends State<PostShiftScreen> {
 
             setState(() {
               selectedHours = value;
+              // Clear previous pay rate when hours change
+              _payRateController.clear();
             });
 
             _calculateEndTime();
@@ -305,7 +319,6 @@ class _PostShiftScreenState extends State<PostShiftScreen> {
     );
   }
 
-  // Method to pick end time
   Future<void> _selectEndTime(BuildContext context) async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
@@ -483,6 +496,13 @@ class _PostShiftScreenState extends State<PostShiftScreen> {
 
         // Show success message and navigate back
         if (mounted) {
+          await ActivityLogger.logJobPosting({
+            'job_title': _ShiftTitleController.text,
+            'company': _companyController.text,
+            'location': _locationController.text,
+            'pay_rate': double.parse(_payRateController.text),
+            'number_of_positions': int.parse(_positionsController.text),
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -992,30 +1012,45 @@ class _PostShiftScreenState extends State<PostShiftScreen> {
 
                               // Row for Start Time and End Time
                               _buildTimeSelectionRow(), // Pay Rate
-                              // Pay Rate
-                              _buildTextField(
-                                controller: _payRateController,
-                                label: 'Pay Rate (₹)',
-                                hint: 'Per Day Rate in INR',
-                                icon: Icons.payments_outlined,
-                                prefixText: '₹ ',
-                                keyboardType: TextInputType.numberWithOptions(
-                                  decimal: true,
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter pay rate';
-                                  }
-                                  final payRate = double.tryParse(value);
-                                  if (payRate == null) {
-                                    return 'Please enter a valid amount';
-                                  }
-                                  if (payRate < 1000) {
-                                    return 'Pay rate must be ₹1000 or more';
-                                  }
-                                  return null;
-                                },
+                              // Pay RateExpanded(
+                              Row(
+                                children: [
+                                  // Total Pay Rate
+                                  Expanded(
+                                    child: _buildTextField(
+                                      controller: _payRateController,
+                                      label: 'Total Pay (₹)',
+                                      hint: 'Calculated pay rate',
+                                      icon: Icons.payments_outlined,
+                                      prefixText: '₹ ',
+                                      readOnly: true,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  // Hourly Pay Rate
+                                  Expanded(
+                                    child: _buildTextField(
+                                      controller: _hourlyRateController,
+                                      label: 'Hourly Pay (₹)',
+                                      hint: 'Enter hourly rate',
+                                      icon: Icons.payments_outlined,
+                                      prefixText: '₹ ',
+                                      keyboardType: TextInputType.number,
+                                      validator: (value) {
+                                        if (value == null || value.isEmpty) {
+                                          return 'Please enter hourly rate';
+                                        }
+                                        if (double.tryParse(value) == null ||
+                                            double.parse(value) <= 0) {
+                                          return 'Please enter a valid rate';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                  ),
+                                ],
                               ),
+
                               // Number of Positions
                               _buildTextField(
                                 controller: _positionsController,
@@ -1166,6 +1201,85 @@ class _PostShiftScreenState extends State<PostShiftScreen> {
     );
   }
 
+  void _calculatePayRate() {
+    if (selectedHours != null) {
+      // Show a dialog to input hourly rate
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          final hourlyRateController = TextEditingController();
+
+          return AlertDialog(
+            title: Text('Enter Hourly Rate'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'You selected ${selectedHours} hours',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                SizedBox(height: 16),
+                TextField(
+                  controller: hourlyRateController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    hintText: 'Enter hourly rate in ₹',
+                    prefixText: '₹ ',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  // Validate hourly rate
+                  final hourlyRate = double.tryParse(hourlyRateController.text);
+
+                  if (hourlyRate != null && hourlyRate > 0) {
+                    // Calculate total pay rate
+                    final totalPayRate = hourlyRate * selectedHours!;
+
+                    setState(() {
+                      _payRateController.text = totalPayRate.toStringAsFixed(2);
+                    });
+
+                    Navigator.pop(context);
+                  } else {
+                    // Show error if invalid input
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Please enter a valid hourly rate'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                },
+                child: Text('Calculate Total Pay'),
+              ),
+            ],
+          );
+        },
+      );
+    } else {
+      // Show a snackbar to select hours first
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please select shift duration first'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   // Helper method to build consistent text fields
   Widget _buildTextField({
     required TextEditingController controller,
@@ -1178,6 +1292,7 @@ class _PostShiftScreenState extends State<PostShiftScreen> {
     String? prefixText,
     TextInputType keyboardType = TextInputType.text,
     String? Function(String?)? validator,
+    void Function(String)? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 20),

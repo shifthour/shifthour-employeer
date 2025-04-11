@@ -15,10 +15,18 @@ class NavigationController extends GetxController {
   // Observable for current index
   final RxInt currentIndex = 0.obs;
 
+  // Flag to control if navigation should happen
+  final RxBool enableNavigation = true.obs;
+
   // Method to change the selected index
   void changePage(int index) {
+    // Update the index
     currentIndex.value = index;
-    navigateToPage(index);
+
+    // Only navigate if navigation is enabled
+    if (enableNavigation.value) {
+      navigateToPage(index);
+    }
   }
 
   // Method to handle navigation based on index
@@ -43,6 +51,20 @@ class NavigationController extends GetxController {
         Get.off(() => const EmployerProfileScreen(), preventDuplicates: true);
         break;
     }
+  }
+
+  // Helper method to safely set current tab without navigation
+  void setTabWithoutNavigation(int index) {
+    // Temporarily disable navigation
+    enableNavigation.value = false;
+
+    // Set the index
+    currentIndex.value = index;
+
+    // Re-enable navigation after a short delay
+    Future.delayed(const Duration(milliseconds: 100), () {
+      enableNavigation.value = true;
+    });
   }
 }
 
@@ -128,11 +150,12 @@ mixin NavigationMixin {
     try {
       // Try to find the existing controller
       final controller = Get.find<NavigationController>();
-      controller.currentIndex.value = index;
+      // Use the safer method instead of directly setting the value
+      controller.setTabWithoutNavigation(index);
     } catch (e) {
       // If not found, put a new permanent one
       final controller = Get.put(NavigationController(), permanent: true);
-      controller.currentIndex.value = index;
+      controller.setTabWithoutNavigation(index);
     }
   }
 }

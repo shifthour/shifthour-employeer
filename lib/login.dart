@@ -566,6 +566,7 @@ class _EmployerLoginPageState extends State<EmployerLoginPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Header section
+
                       // Email field
                       Text(
                         'Business Email',
