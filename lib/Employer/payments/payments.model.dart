@@ -565,35 +565,85 @@ class PaymentsController extends GetxController {
     }
   }
 
-  // Add funds to wallet
   Future<bool> addFundsToWallet(double amount, String paymentMethodId) async {
-    if (_walletId == null) {
-      error.value = 'No wallet found';
-      return false;
-    }
-
     try {
-      // Try to use the stored procedure
-      try {
-        await _supabaseClient.rpc(
-          'add_funds_to_wallet',
-          params: {
-            'wallet_id': _walletId,
-            'amount': amount,
-            'description': 'Funds added via app',
-            'payment_method_id': paymentMethodId,
-          },
-        );
-
-        // Refresh wallet data and transactions
-        await fetchWalletData();
-        await fetchTransactions();
-        return true;
-      } catch (e) {
-        // If the RPC call fails, do the update locally
-        print('RPC error: $e, fallback to local update');
-        return _addFundsLocally(amount);
+      // First, check if a wallet exists for the current employer
+      final currentUser = Supabase.instance.client.auth.currentUser;
+      if (currentUser == null) {
+        error.value = 'User not authenticated';
+        return false;
       }
+
+      // Try to find existing wallet or create a new one if it doesn't exist
+      Map<String, dynamic>? existingWallet;
+      try {
+        existingWallet =
+            await Supabase.instance.client
+                .from('employer_wallet')
+                .select()
+                .eq('employer_id', currentUser.id)
+                .single();
+      } catch (e) {
+        // No existing wallet found, create a new one
+        existingWallet = null;
+      }
+
+      if (existingWallet == null) {
+        // Create new wallet
+        final newWalletResponse =
+            await Supabase.instance.client
+                .from('employer_wallet')
+                .insert({
+                  'employer_id': currentUser.id,
+                  'balance': amount,
+                  'currency': 'INR', // Default to Indian Rupee
+                  'last_updated': DateTime.now().toIso8601String(),
+                  'created_at': DateTime.now().toIso8601String(),
+                })
+                .select()
+                .single();
+
+        // Update local wallet data
+        walletData.value = newWalletResponse;
+        _walletId = newWalletResponse['id'];
+      } else {
+        // Update existing wallet balance
+        final currentBalance =
+            existingWallet['balance'] is int
+                ? (existingWallet['balance'] as int).toDouble()
+                : (existingWallet['balance'] as double);
+
+        final updatedWalletResponse =
+            await Supabase.instance.client
+                .from('employer_wallet')
+                .update({
+                  'balance': currentBalance + amount,
+                  'last_updated': DateTime.now().toIso8601String(),
+                })
+                .eq('id', existingWallet['id'])
+                .select()
+                .single();
+
+        // Update local wallet data
+        walletData.value = updatedWalletResponse;
+        _walletId = updatedWalletResponse['id'];
+      }
+
+      // Record the transaction - remove payment_method_id column
+      await Supabase.instance.client.from('wallet_transactions').insert({
+        'wallet_id': _walletId,
+        'amount': amount,
+        'transaction_type': 'deposit',
+        'description': 'Funds added via app',
+        'status': 'completed',
+        'created_at': DateTime.now().toIso8601String(),
+        // Remove payment_method_id column
+      });
+
+      // Refresh transactions
+      await fetchTransactions();
+
+      return true;
     } catch (e) {
       error.value = 'Error adding funds: $e';
       print(error.value);
@@ -601,6 +651,7 @@ class PaymentsController extends GetxController {
     }
   }
 
+  // Also update the fetchTransactions method to remove reference to payment_method_id
   // Add funds locally as a fallback
   Future<bool> _addFundsLocally(double amount) async {
     try {

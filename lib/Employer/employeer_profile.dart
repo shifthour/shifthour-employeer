@@ -83,21 +83,30 @@ class EmployerProfileController extends GetxController {
     });
   }
 
-  // Method to load employer data from Supabase
   Future<void> loadEmployerFromSupabase() async {
     try {
       isLoading.value = true;
 
-      // Get current user ID (you would implement this based on your auth system)
-      final String employerId = getCurrentEmployerId();
+      // Get current user
+      final currentUser = supabase.auth.currentUser;
+      if (currentUser == null || currentUser.email == null) {
+        throw Exception('No authenticated user found or user has no email');
+      }
+
+      final email = currentUser.email;
+      print('Trying to load employer with email: $email');
 
       // Query the employers table from Supabase
       final response =
           await supabase
               .from('employers')
               .select()
-              .eq('id', employerId)
-              .single();
+              .eq('contact_email', email!) // Use contact_email not email
+              .maybeSingle(); // Use maybeSingle instead of single
+
+      if (response == null) {
+        throw Exception('No employer found with email: $email');
+      }
 
       // Convert the response to an Employer object
       final employerData = Employer.fromJson(response);
@@ -115,9 +124,8 @@ class EmployerProfileController extends GetxController {
     } finally {
       isLoading.value = false;
     }
-  }
+  } // Fallback method to load all employers
 
-  // Fallback method to load all employers
   Future<void> loadAllEmployers() async {
     try {
       // Query all records from the employers table
@@ -484,37 +492,7 @@ class EmployerProfileScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Company Information', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Business Type',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Year Founded',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+
           const SizedBox(height: 16),
           Row(
             children: [
@@ -534,19 +512,6 @@ class EmployerProfileScreen extends StatelessWidget {
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.primaryColor,
                         ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Company Size',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.grey.shade600,
                       ),
                     ),
                   ],

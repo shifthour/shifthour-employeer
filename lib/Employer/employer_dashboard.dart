@@ -22,6 +22,8 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
   String _userName = "";
   String _usercompany = "";
   String _contactemail = "";
+  int _totalShifts = 0;
+  int _activeWorkers = 0;
   @override
   void initState() {
     super.initState();
@@ -33,10 +35,58 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
 
       // Load employer data
       _loadUserData();
+      _loadProfileData();
     });
   }
 
   Future<void> _loadUserData() async {
+    try {
+      setState(() => _isLoading = true);
+
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null || user.email == null) {
+        throw Exception('User not logged in or email not available');
+      }
+
+      final email = user.email!;
+
+      try {
+        // Fetch total shifts count from worker_job_listings
+        final totalShiftsResponse =
+            await Supabase.instance.client
+                .from('worker_job_listings')
+                .select()
+                .eq('user_id', user.id)
+                .count();
+
+        // Fetch active workers count by joining worker_job_listings and worker_job_applications
+        final activeWorkersResponse =
+            await Supabase.instance.client
+                .from('worker_job_listings')
+                .select('worker_job_applications!inner(*)')
+                .eq('user_id', user.id)
+                .eq('worker_job_applications.application_status', 'Applied')
+                .count();
+
+        if (mounted) {
+          setState(() {
+            _totalShifts = totalShiftsResponse.count ?? 0;
+            _activeWorkers = activeWorkersResponse.count ?? 0;
+          });
+        }
+      } catch (e) {
+        print('ERROR: $e');
+      }
+    } catch (e) {
+      print('Error loading user data: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _loadProfileData() async {
     try {
       setState(() => _isLoading = true);
 
@@ -83,11 +133,10 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
       print('Error loading user data: $e');
       // Keep default values
     } finally {
-      setState(() => _isLoading = false);
+      // setState(() => _isLoading = false);
     }
   }
 
-  @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
@@ -172,7 +221,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(10),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -188,7 +237,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                               'Your business verification is incomplete',
                               style: TextStyle(
                                 fontFamily: 'Inter',
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w300,
                               ),
                             ),
                           ],
@@ -249,12 +298,13 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                                 context,
                                 icon: Icons.work_rounded,
                                 iconColor: const Color(0xFF5B6BF8),
-                                value: '24',
+                                value: '$_totalShifts',
                                 label: 'Total Shifts',
                                 growthValue: '+10%',
                                 growthColor: const Color(0xFF5B6BF8),
                               ),
                             ),
+
                             const SizedBox(width: 16),
                             // Active Workers
                             Expanded(
@@ -262,7 +312,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                                 context,
                                 icon: Icons.people_rounded,
                                 iconColor: Colors.teal,
-                                value: '142',
+                                value: '$_activeWorkers',
                                 label: 'Active Workers',
                                 growthValue: '+12%',
                                 growthColor: Colors.teal,
@@ -592,21 +642,71 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                           child: const Text('Cancel'),
                         ),
                         TextButton(
-                          onPressed: () {
+                          onPressed: () async {
                             Navigator.of(context).pop(); // Close dialog
-                            // Navigate to login screen
-                            Navigator.of(context).pushAndRemoveUntil(
-                              MaterialPageRoute(
-                                builder: (context) => const EmployerLoginPage(),
-                              ),
-                              (Route<dynamic> route) => false,
-                            );
 
-                            // Alternatively, you could use pushReplacement if you're not using named routes:
-                            // Navigator.of(context).pushAndRemoveUntil(
-                            //   MaterialPageRoute(builder: (context) => LoginScreen()),
-                            //   (Route<dynamic> route) => false,
-                            // );
+                            try {
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (BuildContext dialogContext) {
+                                  return const Center(
+                                    child: CircularProgressIndicator(),
+                                  );
+                                },
+                              );
+
+                              // Clear Supabase session
+                              await Supabase.instance.client.auth.signOut();
+
+                              // Clear any local storage if needed
+                              // final prefs = await SharedPreferences.getInstance();
+                              //await prefs.remove('supabase_session');
+
+                              // Store the context in a local variable to check if it's still mounted
+                              final scaffoldContext = context;
+
+                              // Check if context is still valid before using Navigator
+                              if (Navigator.canPop(context)) {
+                                Navigator.of(
+                                  context,
+                                ).pop(); // Close loading indicator
+
+                                // Navigate to login screen
+                                Navigator.of(context).pushAndRemoveUntil(
+                                  MaterialPageRoute(
+                                    builder:
+                                        (context) => const EmployerLoginPage(),
+                                  ),
+                                  (Route<dynamic> route) => false,
+                                );
+                              }
+                            } catch (e) {
+                              // Handle any errors
+                              print('Logout error: $e');
+
+                              // Check if context is still valid before showing SnackBar
+                              if (context.mounted) {
+                                Navigator.of(
+                                  context,
+                                ).pop(); // Close loading indicator
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Error during logout: $e'),
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              // Handle any errors
+                              Navigator.of(
+                                context,
+                              ).pop(); // Close loading indicator
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error during logout: $e'),
+                                ),
+                              );
+                            }
                           },
                           style: TextButton.styleFrom(
                             foregroundColor: Colors.red,
@@ -806,7 +906,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                         style: const TextStyle(
                           fontFamily: 'Inter',
                           fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w300,
                         ),
                       ),
                       Text(
@@ -814,7 +914,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                         style: TextStyle(
                           fontFamily: 'Inter',
                           fontSize: 12,
-                          color: Colors.grey.shade600,
+                          color: Colors.grey.shade300,
                         ),
                       ),
                     ],

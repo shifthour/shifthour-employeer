@@ -35,7 +35,8 @@ class _PostShiftScreenState extends State<PostShiftScreen> {
   final TextEditingController _ShiftPincodeController = TextEditingController();
   final TextEditingController _websiteController = TextEditingController();
   final TextEditingController _dressCodeController = TextEditingController();
-
+  final List<int> hourOptions = [4, 5, 6, 7, 8, 9]; // Shift duration options
+  int? selectedHours;
   DateTime? selectedDate;
   TimeOfDay? selectedStartTime;
   TimeOfDay? selectedEndTime;
@@ -85,8 +86,7 @@ class _PostShiftScreenState extends State<PostShiftScreen> {
     }
   }
 
-  // Method to pick start time
-  Future<void> _selectStartTime(BuildContext context) async {
+  void _selectStartTime(BuildContext context) async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: selectedStartTime ?? TimeOfDay.now(),
@@ -104,8 +104,205 @@ class _PostShiftScreenState extends State<PostShiftScreen> {
       setState(() {
         selectedStartTime = picked;
         _startTimeController.text = picked.format(context);
+
+        // Reset end time and hours when start time changes
+        selectedEndTime = null;
+        _endTimeController.clear();
+        selectedHours = null;
       });
     }
+  }
+
+  // New method to calculate end time based on start time and hours
+  void _calculateEndTime() {
+    if (selectedStartTime != null && selectedHours != null) {
+      // Convert start time to minutes
+      int startMinutes =
+          selectedStartTime!.hour * 60 + selectedStartTime!.minute;
+
+      // Add selected hours
+      int endMinutes = startMinutes + (selectedHours! * 60);
+
+      // Convert back to TimeOfDay
+      int endHour = endMinutes ~/ 60;
+      int endMinute = endMinutes % 60;
+
+      // Adjust for day overflow
+      endHour = endHour % 24;
+
+      final endTime = TimeOfDay(hour: endHour, minute: endMinute);
+
+      setState(() {
+        selectedEndTime = endTime;
+        _endTimeController.text = endTime.format(context);
+      });
+    }
+  }
+
+  Widget _buildTimeSelectionRow() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Check if we have enough width for a row layout
+        if (constraints.maxWidth > 600) {
+          return Row(
+            children: [
+              // Start Time
+              Expanded(
+                child: _buildTextField(
+                  controller: _startTimeController,
+                  label: 'Start Time',
+                  hint: 'Select',
+                  icon: Icons.access_time,
+                  readOnly: true,
+                  onTap: () => _selectStartTime(context),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Required';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Hours Dropdown
+              Expanded(child: _buildHoursDropdown()),
+              const SizedBox(width: 16),
+              // End Time
+              Expanded(
+                child: _buildTextField(
+                  controller: _endTimeController,
+                  label: 'End Time',
+                  hint: 'Calculated',
+                  icon: Icons.access_time,
+                  readOnly: true,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Required';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+            ],
+          );
+        } else {
+          // Vertical layout for smaller screens
+          return Column(
+            children: [
+              // Start Time
+              _buildTextField(
+                controller: _startTimeController,
+                label: 'Start Time',
+                hint: 'Select',
+                icon: Icons.access_time,
+                readOnly: true,
+                onTap: () => _selectStartTime(context),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Required';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              // Hours Dropdown
+              _buildHoursDropdown(),
+              const SizedBox(height: 16),
+              // End Time
+              _buildTextField(
+                controller: _endTimeController,
+                label: 'End Time',
+                hint: 'Calculated',
+                icon: Icons.access_time,
+                readOnly: true,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Required';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          );
+        }
+      },
+    );
+  }
+
+  // Extracted hours dropdown to a separate method for reusability
+  Widget _buildHoursDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Shift Duration',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+            fontFamily: 'Inter',
+          ),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<int>(
+          isExpanded: true, // This helps prevent overflow
+          value: selectedHours,
+          decoration: InputDecoration(
+            hintText: 'Select Hours',
+            prefixIcon: Icon(Icons.timer_outlined, color: Color(0xFF5B6BF8)),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFF5B6BF8)),
+            ),
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 12,
+            ),
+          ),
+          items:
+              hourOptions.map((hours) {
+                return DropdownMenuItem<int>(
+                  value: hours,
+                  child: Text('$hours Hours'),
+                );
+              }).toList(),
+          onChanged: (value) {
+            if (selectedStartTime == null) {
+              // Show a snackbar to select start time first
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Please select a start time first'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+              return;
+            }
+
+            setState(() {
+              selectedHours = value;
+            });
+
+            _calculateEndTime();
+          },
+          validator: (value) {
+            if (value == null) {
+              return 'Select shift duration';
+            }
+            return null;
+          },
+        ),
+      ],
+    );
   }
 
   // Method to pick end time
@@ -794,47 +991,7 @@ class _PostShiftScreenState extends State<PostShiftScreen> {
                               ),
 
                               // Row for Start Time and End Time
-                              Row(
-                                children: [
-                                  // Start Time
-                                  Expanded(
-                                    child: _buildTextField(
-                                      controller: _startTimeController,
-                                      label: 'Start Time',
-                                      hint: 'Select',
-                                      icon: Icons.access_time,
-                                      readOnly: true,
-                                      onTap: () => _selectStartTime(context),
-                                      validator: (value) {
-                                        if (value == null || value.isEmpty) {
-                                          return 'Required';
-                                        }
-                                        return null;
-                                      },
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  // End Time
-                                  Expanded(
-                                    child: _buildTextField(
-                                      controller: _endTimeController,
-                                      label: 'End Time',
-                                      hint: 'Select',
-                                      icon: Icons.access_time,
-                                      readOnly: true,
-                                      onTap: () => _selectEndTime(context),
-                                      validator: (value) {
-                                        if (value == null || value.isEmpty) {
-                                          return 'Required';
-                                        }
-                                        return null;
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
-
-                              // Pay Rate
+                              _buildTimeSelectionRow(), // Pay Rate
                               // Pay Rate
                               _buildTextField(
                                 controller: _payRateController,

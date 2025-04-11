@@ -1181,26 +1181,8 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
 
   // Show add funds dialog
   void _showAddFundsDialog() {
-    if (!_paymentsController.hasPaymentMethods()) {
-      Get.snackbar(
-        'No Payment Methods',
-        'Please add a payment method first.',
-        snackPosition: SnackPosition.BOTTOM,
-      );
-      return;
-    }
-
+    // Remove the payment method check
     final TextEditingController amountController = TextEditingController();
-    final defaultMethodId = _paymentsController.getDefaultPaymentMethodId();
-
-    if (defaultMethodId == null) {
-      Get.snackbar(
-        'Error',
-        'No default payment method found.',
-        snackPosition: SnackPosition.BOTTOM,
-      );
-      return;
-    }
 
     Get.dialog(
       Dialog(
@@ -1222,42 +1204,6 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                   labelText: 'Amount (₹)',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.currency_rupee),
-                ),
-              ),
-              SizedBox(height: 16),
-              Text(
-                'Payment Method',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              SizedBox(height: 8),
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: ListTile(
-                  leading: Icon(Icons.credit_card),
-                  title: Text(
-                    _paymentsController.paymentMethods.firstWhere(
-                      (method) => method['id'] == defaultMethodId,
-                    )['display_name'],
-                  ),
-                  subtitle: Text('Default payment method'),
-                  trailing: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.green.shade100,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      'Default',
-                      style: TextStyle(
-                        color: Colors.green.shade700,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
                 ),
               ),
               SizedBox(height: 24),
@@ -1291,8 +1237,9 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                       }
 
                       Get.back();
+                      // Pass null as payment method ID
                       _paymentsController
-                          .addFundsToWallet(amount, defaultMethodId)
+                          .addFundsToWallet(amount, 'system_default')
                           .then((success) {
                             if (success) {
                               Get.snackbar(
@@ -1324,9 +1271,8 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
         ),
       ),
     );
-  }
+  } // Show withdraw dialog
 
-  // Show withdraw dialog
   void _showWithdrawDialog() {
     if (!_paymentsController.hasPaymentMethods()) {
       Get.snackbar(
