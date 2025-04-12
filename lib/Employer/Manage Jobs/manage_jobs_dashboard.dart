@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shifthour_employeer/Employer/employer_dashboard.dart';
@@ -22,7 +23,8 @@ class _ManageHomePageState extends State<Manage_Jobs_HomePage> {
   bool isLoading = true;
   List<Map<String, dynamic>> jobs = [];
   final supabase = Supabase.instance.client;
-
+  String mainTab = "all"; // To track the main tab (all, assigned, unassigned)
+  String assignedSubTab = "all";
   final List<String> sortOptions = ["Recent", "Date", "Pay Rate"];
 
   @override
@@ -34,6 +36,13 @@ class _ManageHomePageState extends State<Manage_Jobs_HomePage> {
       final controller = Get.find<NavigationController>();
       controller.currentIndex.value = 1;
     });
+  } // Add this at the beginning of your fetchJobs method to analyze the structure
+
+  // Replace excessive print statements with conditional logging
+  void debugLog(String message) {
+    if (kDebugMode) {
+      print(message);
+    }
   }
 
   Future<void> fetchJobs() async {
@@ -42,12 +51,8 @@ class _ManageHomePageState extends State<Manage_Jobs_HomePage> {
     });
 
     try {
-      // Get current user ID
       final userId = supabase.auth.currentUser?.id;
-      print('Current user ID: $userId');
-
       if (userId == null) {
-        print('No user ID found - not logged in');
         setState(() {
           isLoading = false;
           jobs = [];
@@ -55,104 +60,132 @@ class _ManageHomePageState extends State<Manage_Jobs_HomePage> {
         return;
       }
 
-      // Fetch jobs from the worker_job_listings table where user_id matches current user
+      // Comprehensive query to fetch jobs with potential worker details
       final response = await supabase
           .from('worker_job_listings')
-          .select()
-          .eq('user_id', userId) // Add this line to filter by current user
+          .select('''
+        *,
+        worker_job_applications (
+          full_name, 
+          phone_number, 
+          email, 
+          application_status,
+          date
+        )
+      ''')
+          .eq('user_id', userId)
           .order('created_at', ascending: false);
 
-      // Debug the response
-      print('Supabase response: $response');
-      print('Response type: ${response.runtimeType}');
+      // Process the jobs with joined data
+      final processedJobs =
+          response.map<Map<String, dynamic>>((job) {
+            // Extract worker details
+            String workerName = 'No worker assigned';
+            String phoneNumber = '';
+            String email = '';
+            String applicationStatus = '';
+            bool hasWorkerAssigned = false;
+
+            // Check if there are associated applications
+            final applications = job['worker_job_applications'];
+            if (applications != null && applications.isNotEmpty) {
+              final firstApplication = applications[0];
+              workerName = firstApplication['full_name'] ?? workerName;
+              phoneNumber = firstApplication['phone_number'] ?? '';
+              email = firstApplication['email'] ?? '';
+              applicationStatus = firstApplication['application_status'] ?? '';
+              hasWorkerAssigned = true;
+
+              // Debug info to help diagnose issues
+              print('Job ${job['job_title']} has worker: $workerName');
+              print('Application status: $applicationStatus');
+            } else {
+              print('Job ${job['job_title']} has no assigned workers');
+            }
+
+            // Existing job processing logic
+            DateTime? jobDate;
+            try {
+              jobDate =
+                  job['date'] != null ? DateTime.parse(job['date']) : null;
+            } catch (e) {
+              print('Error parsing date: ${job['date']}');
+              jobDate = null;
+            }
+
+            // Determine status and color
+            Color statusColor;
+            String status = job['status'] ?? "Active";
+            bool isUrgent = false;
+
+            // Set the appropriate status color based on the status
+            switch (status.toLowerCase()) {
+              case 'active':
+                statusColor = Colors.green;
+                break;
+              case 'completed':
+                statusColor = Colors.blue;
+                break;
+              case 'cancelled':
+                statusColor = Colors.red;
+                break;
+              case 'upcoming':
+                statusColor = Colors.orange;
+                break;
+              case 'unassigned':
+                statusColor = Colors.grey;
+                break;
+              default:
+                statusColor = Colors.blueGrey;
+            }
+
+            // Check if job is marked as urgent
+            if (job['urgent'] == true) {
+              isUrgent = true;
+            }
+
+            return {
+              ...job, // Keep all original fields
+              'statusColor': statusColor,
+              'status': status,
+              'urgent': isUrgent,
+              'time':
+                  job['start_time'] != null && job['end_time'] != null
+                      ? '${job['start_time']} - ${job['end_time']}'
+                      : 'No time specified',
+              'date':
+                  jobDate != null
+                      ? DateFormat('MMMM d, yyyy').format(jobDate)
+                      : 'No date specified',
+              'workers': '1/1', // Assuming the application is for one worker
+              'pay': '₹${job['pay_rate'] ?? 0}/hr',
+              'job_title': job['job_title'] ?? 'Untitled Job',
+              'company': job['company'] ?? 'No Company',
+              'location': job['location'] ?? 'No Location',
+              'description': job['description'] ?? 'No description',
+              'number_of_positions':
+                  job['number_of_positions'] ?? job['position_number'] ?? 1,
+              'worker_name': workerName,
+              'phone_number': phoneNumber,
+              'email': email,
+              'application_status': applicationStatus,
+              'has_worker_assigned':
+                  hasWorkerAssigned, // Add this flag for easy checking
+              'position_number': job['position_number'] ?? 3,
+              'shift_id': job['shift_id'] ?? job['id'] ?? "",
+            };
+          }).toList();
+
+      setState(() {
+        jobs = processedJobs;
+        isLoading = false;
+      });
+
+      // Debug summary
+      print('Fetched ${jobs.length} jobs');
       print(
-        'Response length: ${response is List ? response.length : 'not a list'}',
+        'Jobs with workers: ${jobs.where((job) => job['has_worker_assigned'] == true).length}',
       );
-
-      if (response is List && response.isNotEmpty) {
-        // Process each job to add status color
-        final processedJobs =
-            response.map<Map<String, dynamic>>((job) {
-              print('Processing job: $job');
-
-              // Determine status color based on status value
-              Color statusColor;
-              final status = job['status']?.toString() ?? "Active";
-              switch (status.toLowerCase()) {
-                case 'active':
-                  statusColor = const Color(0xFF10B981); // emerald-500
-                  break;
-                case 'in progress':
-                  statusColor = const Color(0xFF3B82F6); // blue-500
-                  break;
-                case 'completed':
-                  statusColor = const Color(0xFF6B7280); // gray-500
-                  break;
-                case 'cancelled':
-                  statusColor = const Color(0xFFEF4444); // red-500
-                  break;
-                default:
-                  statusColor = const Color(
-                    0xFF10B981,
-                  ); // default to emerald-500
-              }
-
-              // Determine if job is urgent (example logic - modify as needed)
-              final now = DateTime.now();
-              DateTime jobDate;
-              try {
-                jobDate = DateTime.parse(job['date'] ?? now.toIso8601String());
-              } catch (e) {
-                print('Error parsing date: ${job['date']}');
-                jobDate = now;
-              }
-
-              final isUrgent =
-                  jobDate.difference(now).inDays <= 2 && status == 'Active';
-
-              // Format start_time and end_time to displayable format
-              String formattedTime = 'No time specified';
-              if (job['start_time'] != null && job['end_time'] != null) {
-                formattedTime = '${job['start_time']} - ${job['end_time']}';
-              }
-
-              // Format date
-              String formattedDate = 'No date specified';
-              if (job['date'] != null) {
-                try {
-                  final date = DateTime.parse(job['date']);
-                  formattedDate = DateFormat('MMMM d, yyyy').format(date);
-                } catch (e) {
-                  print('Error formatting date: ${job['date']}');
-                  formattedDate = job['date'] ?? 'No date';
-                }
-              }
-
-              // Create processed job object
-              return {
-                ...job,
-                'statusColor': statusColor,
-                'urgent': isUrgent,
-                'time': formattedTime,
-                'date': formattedDate,
-                'workers': '0/1', // Placeholder
-                'pay': '₹${job['pay_rate'] ?? 0}/Day',
-              };
-            }).toList();
-
-        print('Processed ${processedJobs.length} jobs');
-
-        setState(() {
-          jobs = processedJobs;
-          isLoading = false;
-        });
-      } else {
-        print('No jobs found or response is not a list');
-        setState(() {
-          jobs = [];
-          isLoading = false;
-        });
-      }
     } catch (e) {
       print('Error fetching jobs: $e');
       setState(() {
@@ -162,39 +195,125 @@ class _ManageHomePageState extends State<Manage_Jobs_HomePage> {
   }
 
   List<Map<String, dynamic>> get filteredJobs {
+    // Get today's date formatted as a string for comparison
+    final today = DateTime.now();
+    final formattedToday = DateFormat('yyyy-MM-dd').format(today);
+
     return jobs.where((job) {
-      // First apply status filter
-      if (activeTab == "all") {
-        // Continue to search filter
-      } else if (activeTab == "Active" &&
-          job["status"]?.toString() != "Active") {
-        return false;
-      } else if (activeTab == "in-progress" &&
-          job["status"]?.toString() != "In Progress") {
-        return false;
-      } else if (activeTab == "completed" &&
-          job["status"]?.toString() != "Completed") {
-        return false;
-      } else if (activeTab == "cancelled" &&
-          job["status"]?.toString() != "Cancelled") {
-        return false;
-      }
+      // Debug to help understand the filtering
+      print(
+        'Filtering job: ${job["job_title"]}, status: ${job["status"]}, has_worker: ${job["has_worker_assigned"]}, date: ${job["date"]}, application_status: ${job["application_status"]}',
+      );
 
-      // Then apply search filter if there is a search query
-      if (searchQuery.isEmpty) {
+      // First apply main tab filter
+      if (mainTab == "all") {
+        // No filtering for "all" main tab
         return true;
+      } else if (mainTab == "assigned") {
+        // For assigned tab, first check if job has a worker assigned
+        if (job["has_worker_assigned"] != true) {
+          return false;
+        }
+
+        // Then apply assigned sub-tab filters
+        if (assignedSubTab == "all") {
+          // Show all assigned jobs
+          return true;
+        } else if (assignedSubTab == "in-progress") {
+          // For in-progress:
+          // 1. Job must have a worker assigned (already checked above)
+          // 2. Job must be scheduled for today
+          // 3. Job must not be completed
+
+          // Parse the job date - this might need adjustment based on your date format
+          String jobDateStr = job["date"]?.toString() ?? "";
+
+          try {
+            // Try to parse the date if it's in a known format
+            DateTime jobDate = DateFormat('MMMM d, yyyy').parse(jobDateStr);
+            String formattedJobDate = DateFormat('yyyy-MM-dd').format(jobDate);
+
+            // Check if job is for today and not completed
+            return formattedJobDate == formattedToday &&
+                job["application_status"]?.toString() != "Completed";
+          } catch (e) {
+            print("Error parsing date: $e for job: ${job["job_title"]}");
+            return false;
+          }
+        } else if (assignedSubTab == "completed") {
+          // Check if the application_status is "Completed" - note the case sensitivity
+          return job["application_status"]?.toString() == "Completed";
+        } else if (assignedSubTab == "upcoming") {
+          // For upcoming jobs, check future dates
+          String jobDateStr = job["date"]?.toString() ?? "";
+
+          try {
+            // Try to parse the date if it's in a known format
+            DateTime jobDate = DateFormat('MMMM d, yyyy').parse(jobDateStr);
+
+            // Check if job date is in the future
+            return jobDate.isAfter(today) &&
+                job["application_status"]?.toString() != "Completed" &&
+                job["application_status"]?.toString() != "Cancelled";
+          } catch (e) {
+            print("Error parsing date: $e for job: ${job["job_title"]}");
+            return false;
+          }
+        }
+      } else if (mainTab == "unassigned") {
+        // Show jobs that don't have a worker assigned
+        return job["has_worker_assigned"] != true;
       }
 
-      // Search in various fields
-      final query = searchQuery.toLowerCase();
-      final title = job["job_title"]?.toString().toLowerCase() ?? "";
-      final company = job["company"]?.toString().toLowerCase() ?? "";
-      final location = job["location"]?.toString().toLowerCase() ?? "";
+      // Apply search filter if there is a search query
+      if (searchQuery.isNotEmpty) {
+        final query = searchQuery.toLowerCase();
+        final title = job["job_title"]?.toString().toLowerCase() ?? "";
+        final company = job["company"]?.toString().toLowerCase() ?? "";
+        final location = job["location"]?.toString().toLowerCase() ?? "";
 
-      return title.contains(query) ||
-          company.contains(query) ||
-          location.contains(query);
+        // Add Shift ID to search criteria with fallback to job ID
+        final shiftId =
+            (job['shift_id'] ?? job['id'] ?? "").toString().toLowerCase();
+
+        return title.contains(query) ||
+            company.contains(query) ||
+            location.contains(query) ||
+            shiftId.contains(query);
+      }
+
+      return true;
     }).toList();
+  }
+
+  TextField _buildSearchTextField(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return TextField(
+      onChanged: (value) {
+        setState(() {
+          searchQuery = value;
+        });
+      },
+      decoration: InputDecoration(
+        hintText: 'Search Shifts by title, location, company, or Shift ID...',
+        prefixIcon: const Icon(Icons.search),
+        fillColor:
+            isDark
+                ? const Color(0xFF1E293B)
+                : const Color(0xFFF8FAFC), // slate-50
+        filled: true,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+            color:
+                isDark
+                    ? const Color(0xFF334155)
+                    : const Color(0xFFE2E8F0), // slate-200
+          ),
+        ),
+        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+      ),
+    );
   }
 
   @override
@@ -367,9 +486,9 @@ class _ManageHomePageState extends State<Manage_Jobs_HomePage> {
       // FAB
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Get.to(() => const PostJobScreen())?.then((_) => fetchJobs());
+          Get.to(() => const PostShiftScreen())?.then((_) => fetchJobs());
         },
-        backgroundColor: Theme.of(context).primaryColor,
+        backgroundColor: Colors.blue,
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );
@@ -388,7 +507,7 @@ class _ManageHomePageState extends State<Manage_Jobs_HomePage> {
               });
             },
             decoration: InputDecoration(
-              hintText: 'Search jobs by title, location, or company...',
+              hintText: 'Search Shifts by title, location, or company...',
               prefixIcon: const Icon(Icons.search),
               fillColor:
                   isDark
@@ -493,7 +612,7 @@ class _ManageHomePageState extends State<Manage_Jobs_HomePage> {
             });
           },
           decoration: InputDecoration(
-            hintText: 'Search jobs...',
+            hintText: 'Search Shifts...',
             prefixIcon: const Icon(Icons.search),
             fillColor:
                 isDark
@@ -513,111 +632,157 @@ class _ManageHomePageState extends State<Manage_Jobs_HomePage> {
           ),
         ),
         const SizedBox(height: 8),
-
-        // Sort and Filter Row
-        Row(
-          children: [
-            // Sort Dropdown
-            Expanded(
-              child: PopupMenuButton<String>(
-                onSelected: (value) {
-                  setState(() {
-                    sortBy = value;
-                  });
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color:
-                          isDark
-                              ? const Color(0xFF334155)
-                              : const Color(0xFFE2E8F0), // slate-200
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.sort, size: 18),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          'Sort: $sortBy',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const Icon(Icons.keyboard_arrow_down, size: 16),
-                    ],
-                  ),
-                ),
-                itemBuilder:
-                    (context) =>
-                        sortOptions
-                            .map(
-                              (option) => PopupMenuItem<String>(
-                                value: option,
-                                child: Text(option),
-                              ),
-                            )
-                            .toList(),
-              ),
-            ),
-
-            const SizedBox(width: 8),
-
-            // Filter Button
-            Container(
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color:
-                      isDark
-                          ? const Color(0xFF334155)
-                          : const Color(0xFFE2E8F0), // slate-200
-                ),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.filter_list),
-                onPressed: () {},
-              ),
-            ),
-          ],
-        ),
       ],
     );
   }
 
   Widget _buildTabsPortrait() {
-    return Wrap(
-      spacing: 4,
+    return Column(
       children: [
-        _buildTabItem('All Jobs', 'all'),
-        _buildTabItem('Active', 'Active'),
-        _buildTabItem('In Progress', 'in-progress'),
-        _buildTabItem('Completed', 'completed'),
-        _buildTabItem('Cancelled', 'cancelled'),
+        // Main tabs
+        Row(
+          children: [
+            _buildMainTab('All Shifts', 'all'),
+            _buildMainTab('Assigned', 'assigned'),
+            _buildMainTab('Unassigned', 'unassigned'),
+          ],
+        ),
+
+        // Sub-tabs for Assigned (only show when assigned tab is selected)
+        if (mainTab == "assigned")
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Row(
+              children: [
+                _buildSubTab('All', 'all'),
+                _buildSubTab('In Progress', 'in-progress'),
+                _buildSubTab('Completed', 'completed'),
+                _buildSubTab('Upcoming', 'upcoming'),
+              ],
+            ),
+          ),
       ],
     );
   }
 
   Widget _buildTabsLandscape() {
-    return Row(
+    return Column(
       children: [
-        _buildTab('All Jobs', 'all'),
-        _buildTab('Active', 'Active'),
-        _buildTab('In Progress', 'in-progress'),
-        _buildTab('Completed', 'completed'),
-        _buildTab('Cancelled', 'cancelled'),
+        // Main tabs
+        Row(
+          children: [
+            _buildMainTab('All Shifts', 'all'),
+            _buildMainTab('Assigned', 'assigned'),
+            _buildMainTab('Unassigned', 'unassigned'),
+          ],
+        ),
+
+        // Sub-tabs for Assigned (only show when assigned tab is selected)
+        if (mainTab == "assigned")
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Row(
+              children: [
+                _buildSubTab('All', 'all'),
+                _buildSubTab('In Progress', 'in-progress'),
+                _buildSubTab('Completed', 'completed'),
+                _buildSubTab('Upcoming', 'upcoming'),
+              ],
+            ),
+          ),
       ],
+    );
+  }
+
+  // Add these new methods for main tabs and sub-tabs
+  Widget _buildMainTab(String title, String value) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            mainTab = value;
+            // Reset assigned sub-tab when changing main tab
+            if (value != "assigned") {
+              assignedSubTab = "all";
+            }
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color:
+                mainTab == value
+                    ? isDark
+                        ? const Color(0xFF0F172A) // slate-900
+                        : Colors.white
+                    : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontWeight:
+                  mainTab == value ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubTab(String title, String value) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            assignedSubTab = value;
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color:
+                assignedSubTab == value
+                    ? isDark
+                        ? const Color(0xFF1E293B) // slate-800
+                        : const Color(0xFFF8FAFC) // very light blue
+                    : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border:
+                assignedSubTab == value
+                    ? Border.all(
+                      color: Theme.of(context).primaryColor.withOpacity(0.5),
+                      width: 1,
+                    )
+                    : null,
+          ),
+          child: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight:
+                  assignedSubTab == value ? FontWeight.bold : FontWeight.normal,
+              color:
+                  assignedSubTab == value
+                      ? Theme.of(context).primaryColor
+                      : null,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
   Widget _buildTabItem(String title, String value) {
     return FractionallySizedBox(
-      widthFactor: title == 'All Jobs' || title == 'In Progress' ? 0.33 : 0.32,
+      widthFactor:
+          title == 'All Shifts' || title == 'In Progress' ? 0.33 : 0.32,
       child: GestureDetector(
         onTap: () {
           setState(() {
@@ -721,7 +886,7 @@ class _ManageHomePageState extends State<Manage_Jobs_HomePage> {
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: () {
-              Get.to(() => const PostJobScreen())?.then((_) => fetchJobs());
+              Get.to(() => const PostShiftScreen())?.then((_) => fetchJobs());
             },
             icon: const Icon(Icons.add),
             label: const Text('Post a New Job'),
@@ -735,7 +900,6 @@ class _ManageHomePageState extends State<Manage_Jobs_HomePage> {
   }
 }
 
-// This should be defined as a separate class outside the _ManageHomePageState class
 class JobCard extends StatelessWidget {
   final Map<String, dynamic> job;
   final bool isDark;
@@ -745,77 +909,236 @@ class JobCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // Debug the available fields
+    print('JobCard - Available fields: ${job.keys.toList()}');
+
+    // Get the has_worker_assigned flag, defaulting to false if not present
+    final bool hasWorkerAssigned = job['has_worker_assigned'] == true;
+
+    // Check if this is an upcoming job
+    final bool isUpcoming =
+        job['status']?.toString().toLowerCase() == 'upcoming';
+
+    // Debug the job status and worker assignment
+    print(
+      'Job ${job["job_title"]} - status: ${job["status"]}, hasWorker: $hasWorkerAssigned',
+    );
+
+    // Extract worker name with proper handling
+    String workerName = 'No worker assigned';
+
+    final String shiftId =
+        job['shift_id']?.toString() ?? job['id']?.toString() ?? 'N/A';
+    if (job['worker_name'] != null &&
+        job['worker_name'].toString().trim().isNotEmpty) {
+      workerName = job['worker_name'];
+    } else {
+      // Fallback method to extract worker name from various fields
+      final nameFields = ['full_name', 'fullName', 'name'];
+
+      for (var field in nameFields) {
+        if (job[field] != null) {
+          final nameStr = job[field].toString().trim();
+          if (nameStr.isNotEmpty &&
+              nameStr.toLowerCase() != 'null' &&
+              nameStr.toLowerCase() != 'unknown') {
+            workerName = nameStr;
+            break;
+          }
+        }
+      }
+    }
     return Card(
       elevation: 0,
+      margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color:
-              isDark
-                  ? const Color(0xFF1E293B)
-                  : const Color(0xFFE2E8F0), // slate-200
+          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+          width: 1,
         ),
       ),
-      color:
-          isDark ? const Color(0xFF0F172A) : Colors.white, // slate-900 or white
+      color: isDark ? const Color(0xFF0F172A) : Colors.white,
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
           children: [
-            // Urgent Badge
-            if (job["urgent"] == true)
-              Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color:
-                      isDark
-                          ? const Color(0xFF7F1D1D).withOpacity(0.2)
-                          : const Color(0xFFFEE2E2), // red-50
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color:
-                        isDark
-                            ? const Color(0xFF991B1B)
-                            : const Color(0xFFFCA5A5), // red-200
+            // Top section: Shift ID, pay rate and favorite icon
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Shift ID in place of title
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.primaryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Shift ID: $shiftId',
+                      style: TextStyle(
+                        color: theme.primaryColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ),
                 ),
-                child: const Text(
-                  'Urgent',
-                  style: TextStyle(
-                    color: Color(0xFFDC2626), // red-600
-                    fontWeight: FontWeight.w500,
-                    fontSize: 12,
+                SizedBox(width: 10),
+                // Pay Rate with Container
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    "₹${job["pay_rate"] ?? "0"}/hr",
+                    style: TextStyle(
+                      color: Colors.blue.shade700,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+
+                // Favorite Icon
+                IconButton(
+                  icon: Icon(
+                    Icons.favorite_border,
+                    color: isDark ? Colors.grey : Colors.grey.shade400,
+                  ),
+                  onPressed: () {
+                    // Implement favorite functionality
+                  },
+                ),
+              ],
+            ),
+
+            // Job Title below shift ID
+            Padding(
+              padding: const EdgeInsets.only(top: 12, bottom: 12),
+              child: Text(
+                job["job_title"] ?? "Untitled Job",
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 20,
+                ),
+              ),
+            ),
+
+            // Status Badge - UPDATED: Always show worker assignment badge if a worker is assigned
+            if (hasWorkerAssigned)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    "Worker Assigned",
+                    style: TextStyle(
+                      color: Colors.green.shade700,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ),
 
-            // Job Header
-            LayoutBuilder(
-              builder: (context, constraints) {
-                return constraints.maxWidth > 500
-                    ? _buildWideJobHeader(context)
-                    : _buildNarrowJobHeader(context);
-              },
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.location_on_outlined,
+                    size: 20,
+                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    job["location"] ?? "No location specified",
+                    style: TextStyle(
+                      fontSize: 16,
+                      color:
+                          isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                    ),
+                  ),
+                ],
+              ),
             ),
 
-            const SizedBox(height: 12),
+            // Time with icon
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.access_time,
+                    size: 20,
+                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    job["start_time"] != null && job["end_time"] != null
+                        ? "${job["start_time"]} - ${job["end_time"]}"
+                        : "No time specified",
+                    style: TextStyle(
+                      fontSize: 16,
+                      color:
+                          isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
-            // Job Details Section
-            _buildJobDetailsSection(context),
+            // UPDATED: Always display worker name if a worker is assigned
+            if (hasWorkerAssigned)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.person,
+                      size: 20,
+                      color:
+                          isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      workerName,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color:
+                            isDark
+                                ? Colors.grey.shade300
+                                : Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
-            const SizedBox(height: 12),
-
-            // View Details Button
+            // View Details Button (right-aligned)
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton.icon(
+                ElevatedButton(
                   onPressed: () {
                     // Show job details in a popup
                     Get.dialog(
@@ -823,20 +1146,20 @@ class JobCard extends StatelessWidget {
                       barrierDismissible: true,
                     );
                   },
-                  icon: const Icon(Icons.visibility),
-                  label: const Text('View Details'),
-                  style: TextButton.styleFrom(
-                    backgroundColor: Theme.of(
-                      context,
-                    ).primaryColor.withOpacity(0.1),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0F172A),
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
-                      vertical: 8,
+                      vertical: 12,
                     ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    foregroundColor: Theme.of(context).primaryColor,
+                  ),
+                  child: const Text(
+                    "View Details",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
                   ),
                 ),
               ],
@@ -845,228 +1168,7 @@ class JobCard extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  Widget _buildJobDetailsSection(BuildContext context) {
-    return Column(
-      children: [
-        // Date and Time
-        Row(
-          children: [
-            Icon(Icons.calendar_today, size: 14, color: Colors.grey),
-            const SizedBox(width: 5),
-            Expanded(
-              child: Text(
-                job["date"] ?? "No date",
-                style: const TextStyle(fontSize: 12),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Icon(Icons.access_time, size: 14, color: Colors.grey),
-            const SizedBox(width: 5),
-            Expanded(
-              child: Text(
-                job["time"] ?? "No time specified",
-                style: const TextStyle(fontSize: 12),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 6),
-
-        // Location and Pay
-        Row(
-          children: [
-            Icon(Icons.location_on, size: 14, color: Colors.grey),
-            const SizedBox(width: 5),
-            Expanded(
-              child: Text(
-                job["location"] ?? "No location",
-                style: const TextStyle(fontSize: 12),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Icon(Icons.payments, size: 14, color: Colors.grey),
-            const SizedBox(width: 5),
-            Text(
-              job["pay"] ?? "₹0/Day",
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildWideJobHeader(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Company Logo
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: Theme.of(context).primaryColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Center(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                (job["company"] ?? "")
-                    .toString()
-                    .substring(
-                      0,
-                      min(2, (job["company"] ?? "").toString().length),
-                    )
-                    .toUpperCase(),
-                style: TextStyle(
-                  color: Theme.of(context).primaryColor,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-        ),
-
-        const SizedBox(width: 16),
-
-        // Job Info
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                job["job_title"] ?? "Untitled Job",
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 18,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              Text(
-                job["company"] ?? "",
-                style: TextStyle(
-                  color: isDark ? Colors.grey[400] : Colors.grey[600],
-                  fontSize: 14,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 8),
-
-              // Status and Workers
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  // Status Badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: job["statusColor"] ?? Colors.blue,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      job["status"] ?? "Active",
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-
-                  // Workers Badge (if applicable)
-                  if (job["workers"] != null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color:
-                            isDark
-                                ? const Color(0xFF1E293B)
-                                : const Color(0xFFF1F5F9), // slate-100
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '${job["workers"]} Workers',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ),
-        ),
-
-        // Action Buttons
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.edit, size: 18),
-              onPressed: () {},
-              color: Colors.grey,
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline, size: 18),
-              onPressed: () {},
-              color: Colors.grey,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNarrowJobHeader(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            // Company Logo
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Center(
-                child: Text(
-                  (job["company"] ?? "")
-                      .toString()
-                      .substring(
-                        0,
-                        min(2, (job["company"] ?? "").toString().length),
-                      )
-                      .toUpperCase(),
-                  style: TextStyle(
-                    color: Theme.of(context).primaryColor,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
+  } // Helper method to build skill tags
 }
 
 class JobDetailsPopup extends StatelessWidget {
@@ -1076,8 +1178,32 @@ class JobDetailsPopup extends StatelessWidget {
   const JobDetailsPopup({Key? key, required this.job, required this.isDark})
     : super(key: key);
 
+  // Helper function to safely get string values
+  String safeString(dynamic value, {String defaultValue = ''}) {
+    if (value == null) return defaultValue;
+    return value.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Debug available fields
+    print('JobDetailsPopup - Available fields: ${job.keys.toList()}');
+    print(
+      'Job ${job["job_title"]} - status: ${job["status"]}, hasWorker: ${job["has_worker_assigned"]}',
+    );
+
+    // Get worker assignment status directly from the flag we added
+    final bool hasWorkerAssigned = job['has_worker_assigned'] == true;
+
+    // Check if this is an upcoming job (for conditional styling if needed)
+    final bool isUpcoming =
+        safeString(job['status']).toLowerCase() == 'upcoming';
+
+    // Get the worker name consistently
+    String workerName = job['worker_name'] ?? 'No worker assigned';
+    final String? phoneNumber = job['phone_number'];
+    final String? workerEmail = job['email'];
+
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: SingleChildScrollView(
@@ -1087,7 +1213,7 @@ class JobDetailsPopup extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Job Title and Company
+              // Header section - unchanged
               Row(
                 children: [
                   Container(
@@ -1099,9 +1225,17 @@ class JobDetailsPopup extends StatelessWidget {
                     ),
                     child: Center(
                       child: Text(
-                        (job["company"] ?? "")
-                            .toString()
-                            .substring(0, 2)
+                        safeString(job["company"], defaultValue: "")
+                            .substring(
+                              0,
+                              min(
+                                2,
+                                safeString(
+                                  job["company"],
+                                  defaultValue: "",
+                                ).length,
+                              ),
+                            )
                             .toUpperCase(),
                         style: TextStyle(
                           color: Theme.of(context).primaryColor,
@@ -1117,7 +1251,10 @@ class JobDetailsPopup extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          job["job_title"] ?? "Untitled Job",
+                          safeString(
+                            job["job_title"],
+                            defaultValue: "Untitled Job",
+                          ),
                           style: const TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
@@ -1126,7 +1263,10 @@ class JobDetailsPopup extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
-                          job["company"] ?? "No Company",
+                          safeString(
+                            job["company"],
+                            defaultValue: "No Company",
+                          ),
                           style: TextStyle(
                             color: isDark ? Colors.grey[400] : Colors.grey[600],
                             fontSize: 14,
@@ -1140,7 +1280,7 @@ class JobDetailsPopup extends StatelessWidget {
 
               const SizedBox(height: 20),
 
-              // Status and Urgent Badge
+              // Status badges - includes Worker Assigned badge
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -1156,7 +1296,7 @@ class JobDetailsPopup extends StatelessWidget {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      job["status"] ?? "Active",
+                      safeString(job["status"], defaultValue: "Active"),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 14,
@@ -1186,37 +1326,145 @@ class JobDetailsPopup extends StatelessWidget {
                         ),
                       ),
                     ),
+
+                  // Worker Assigned Badge - UPDATED to use has_worker_assigned
+                  if (hasWorkerAssigned)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.green),
+                      ),
+                      child: const Text(
+                        'Worker Assigned',
+                        style: TextStyle(
+                          color: Colors.green,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
                 ],
               ),
 
               const SizedBox(height: 20),
 
-              // Detailed Job Information
+              // Detailed Job Information - unchanged
               _buildDetailRow(
                 icon: Icons.calendar_today,
                 title: 'Date',
-                value: job["date"] ?? "No date specified",
+                value: safeString(
+                  job["date"],
+                  defaultValue: "No date specified",
+                ),
               ),
 
               _buildDetailRow(
                 icon: Icons.access_time,
                 title: 'Time',
-                value: job["time"] ?? "No time specified",
+                value: safeString(
+                  job["time"],
+                  defaultValue: "No time specified",
+                ),
               ),
 
               _buildDetailRow(
                 icon: Icons.location_on,
                 title: 'Location',
-                value: job["location"] ?? "No location specified",
+                value: safeString(
+                  job["location"],
+                  defaultValue: "No location specified",
+                ),
               ),
 
               _buildDetailRow(
                 icon: Icons.payments,
                 title: 'Pay Rate',
-                value: job["pay"] ?? "₹0/Day",
+                value: safeString(job["pay"], defaultValue: "₹0/Day"),
               ),
 
-              // Additional Details Section
+              _buildDetailRow(
+                icon: Icons.person_2_outlined,
+                title: 'N.o of positions',
+                value:
+                    job["number_of_positions"] != null
+                        ? safeString(job["number_of_positions"])
+                        : "No Positions specified",
+              ),
+
+              // UPDATED: Always show worker details if a worker is assigned
+              if (hasWorkerAssigned) ...[
+                const SizedBox(height: 20),
+                const Divider(),
+                const SizedBox(height: 10),
+
+                const Text(
+                  'Worker Details',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+
+                // Show worker full name
+                _buildDetailRow(
+                  icon: Icons.person,
+                  title: 'Worker Name',
+                  value: workerName,
+                ),
+
+                // Show worker phone number if available
+                if (phoneNumber != null && phoneNumber.isNotEmpty)
+                  _buildDetailRow(
+                    icon: Icons.phone,
+                    title: 'Phone Number',
+                    value: phoneNumber,
+                  ),
+
+                // Show worker email if available
+                if (workerEmail != null && workerEmail.isNotEmpty)
+                  _buildDetailRow(
+                    icon: Icons.email,
+                    title: 'Email',
+                    value: workerEmail,
+                  ),
+
+                // Show match percentage if available
+                if (job['match_percentage'] != null)
+                  _buildDetailRow(
+                    icon: Icons.percent,
+                    title: 'Match Percentage',
+                    value: '${safeString(job['match_percentage'])}%',
+                  ),
+
+                // Show application status if available
+                if (job['application_status'] != null)
+                  _buildDetailRow(
+                    icon: Icons.notifications,
+                    title: 'Application Status',
+                    value: safeString(job['application_status']),
+                  ),
+
+                // Show position number if available
+                if (job['position_number'] != null)
+                  _buildDetailRow(
+                    icon: Icons.numbers,
+                    title: 'Position Number',
+                    value: safeString(job['position_number']),
+                  ),
+
+                // Show shift_id if available
+                if (job['shift_id'] != null)
+                  _buildDetailRow(
+                    icon: Icons.work_outline,
+                    title: 'Shift ID',
+                    value: safeString(job['shift_id']),
+                  ),
+              ],
+
+              // Additional Details Section - unchanged
               const SizedBox(height: 20),
               const Text(
                 'Additional Details',
@@ -1224,15 +1472,19 @@ class JobDetailsPopup extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               Text(
-                job["description"] ?? "No additional description provided.",
+                safeString(
+                  job["description"],
+                  defaultValue: "No additional description provided.",
+                ),
                 style: TextStyle(
                   color: isDark ? Colors.grey[300] : Colors.grey[700],
                 ),
               ),
 
+              // Rest of the UI remains unchanged
               const SizedBox(height: 20),
 
-              // Action Buttons
+              // Action Buttons - unchanged
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -1240,9 +1492,7 @@ class JobDetailsPopup extends StatelessWidget {
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () {
-                        // TODO: Implement edit functionality
                         Get.back(); // Close the dialog
-                        // Optionally, navigate to edit screen
                       },
                       icon: const Icon(Icons.edit),
                       label: const Text('Edit Job'),
@@ -1266,14 +1516,11 @@ class JobDetailsPopup extends StatelessWidget {
                             ),
                             actions: [
                               TextButton(
-                                onPressed:
-                                    () =>
-                                        Get.back(), // Close confirmation dialog
+                                onPressed: () => Get.back(),
                                 child: const Text('Cancel'),
                               ),
                               ElevatedButton(
                                 onPressed: () {
-                                  // TODO: Implement delete functionality
                                   Get.back(); // Close confirmation dialog
                                   Get.back(); // Close details dialog
                                 },
@@ -1296,6 +1543,61 @@ class JobDetailsPopup extends StatelessWidget {
                   ),
                 ],
               ),
+
+              // Contact Worker Button - UPDATED to use has_worker_assigned
+              if (hasWorkerAssigned &&
+                  ((phoneNumber != null && phoneNumber.isNotEmpty) ||
+                      (workerEmail != null && workerEmail.isNotEmpty))) ...[
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      // Show contact options dialog
+                      Get.dialog(
+                        AlertDialog(
+                          title: const Text('Contact Worker'),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (phoneNumber != null && phoneNumber.isNotEmpty)
+                                ListTile(
+                                  leading: const Icon(Icons.phone),
+                                  title: Text(phoneNumber),
+                                  onTap: () {
+                                    Get.back();
+                                    // Launch phone call
+                                  },
+                                ),
+                              if (workerEmail != null && workerEmail.isNotEmpty)
+                                ListTile(
+                                  leading: const Icon(Icons.email),
+                                  title: Text(workerEmail),
+                                  onTap: () {
+                                    Get.back();
+                                    // Launch email app
+                                  },
+                                ),
+                            ],
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Get.back(),
+                              child: const Text('Close'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.contact_phone),
+                    label: const Text('Contact Worker'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green.shade50,
+                      foregroundColor: Colors.green.shade700,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1303,7 +1605,7 @@ class JobDetailsPopup extends StatelessWidget {
     );
   }
 
-  // Helper method to build consistent detail rows
+  // Helper method to build consistent detail rows (unchanged)
   Widget _buildDetailRow({
     required IconData icon,
     required String title,

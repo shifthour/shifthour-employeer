@@ -76,9 +76,12 @@ class MyApp extends StatelessWidget {
           ),
           GetPage(
             name: '/profile_setup',
-            page: () => const ProfileSetupScreen(isEmployer: false),
+            page: () => const EmployerProfileSetupScreen(),
           ),
-          GetPage(name: '/workers', page: () => const EmployerWorkersScreen()),
+          GetPage(
+            name: '/workers',
+            page: () => const WorkerApplicationsScreen(),
+          ),
           GetPage(
             name: '/employeer',
             page: () => const EmployerProfileScreen(),

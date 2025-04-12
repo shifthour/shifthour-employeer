@@ -1,43 +1,51 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:get/get_core/src/get_main.dart';
 import 'package:intl/intl.dart';
+import 'package:shifthour_employeer/Employer/payments/employeer_payments_dashboard.dart';
+import 'package:shifthour_employeer/const/Activity_log.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class PostJobScreen extends StatefulWidget {
-  const PostJobScreen({Key? key}) : super(key: key);
+class PostShiftScreen extends StatefulWidget {
+  const PostShiftScreen({Key? key}) : super(key: key);
 
   @override
-  State<PostJobScreen> createState() => _PostJobScreenState();
+  State<PostShiftScreen> createState() => _PostShiftScreenState();
 }
 
-class _PostJobScreenState extends State<PostJobScreen> {
+class _PostShiftScreenState extends State<PostShiftScreen> {
   final _formKey = GlobalKey<FormState>();
 
   // Form controllers
-  final TextEditingController _jobTitleController = TextEditingController();
+  final TextEditingController _ShiftTitleController = TextEditingController();
   final TextEditingController _companyController = TextEditingController();
   final TextEditingController _locationController = TextEditingController();
   final TextEditingController _dateController = TextEditingController();
   final TextEditingController _startTimeController = TextEditingController();
   final TextEditingController _endTimeController = TextEditingController();
   final TextEditingController _payRateController = TextEditingController();
+  final TextEditingController _positionsController = TextEditingController();
   final TextEditingController _supervisorNameController =
       TextEditingController();
   final TextEditingController _supervisorPhoneController =
       TextEditingController();
   final TextEditingController _supervisorEmailController =
       TextEditingController();
-  final TextEditingController _jobPincodeController = TextEditingController();
+  final TextEditingController _ShiftPincodeController = TextEditingController();
   final TextEditingController _websiteController = TextEditingController();
   final TextEditingController _dressCodeController = TextEditingController();
-
+  final List<int> hourOptions = [4, 5, 6, 7, 8, 9]; // Shift duration options
+  int? selectedHours;
   DateTime? selectedDate;
   TimeOfDay? selectedStartTime;
   TimeOfDay? selectedEndTime;
   bool _isLoading = false;
-
+  final TextEditingController _hourlyRateController = TextEditingController();
   @override
   void dispose() {
-    _jobTitleController.dispose();
+    _ShiftTitleController.dispose();
     _companyController.dispose();
     _locationController.dispose();
     _dateController.dispose();
@@ -47,10 +55,24 @@ class _PostJobScreenState extends State<PostJobScreen> {
     _supervisorNameController.dispose();
     _supervisorPhoneController.dispose();
     _supervisorEmailController.dispose();
-    _jobPincodeController.dispose();
+    _ShiftPincodeController.dispose();
     _websiteController.dispose();
     _dressCodeController.dispose();
+    _positionsController.dispose();
+
     super.dispose();
+  }
+
+  void initState() {
+    super.initState();
+    // Add listener to hourly rate to calculate total pay automatically
+    _hourlyRateController.addListener(() {
+      if (selectedHours != null) {
+        final hourlyRate = double.tryParse(_hourlyRateController.text) ?? 0;
+        final totalPayRate = hourlyRate * selectedHours!;
+        _payRateController.text = totalPayRate.toStringAsFixed(2);
+      }
+    });
   }
 
   // Method to pick date
@@ -78,8 +100,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
     }
   }
 
-  // Method to pick start time
-  Future<void> _selectStartTime(BuildContext context) async {
+  void _selectStartTime(BuildContext context) async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: selectedStartTime ?? TimeOfDay.now(),
@@ -97,11 +118,207 @@ class _PostJobScreenState extends State<PostJobScreen> {
       setState(() {
         selectedStartTime = picked;
         _startTimeController.text = picked.format(context);
+
+        // Reset end time and hours when start time changes
+        selectedEndTime = null;
+        _endTimeController.clear();
+        selectedHours = null;
       });
     }
   }
 
-  // Method to pick end time
+  void _calculateEndTime() {
+    if (selectedStartTime != null && selectedHours != null) {
+      // Convert start time to minutes
+      int startMinutes =
+          selectedStartTime!.hour * 60 + selectedStartTime!.minute;
+
+      // Add selected hours
+      int endMinutes = startMinutes + (selectedHours! * 60);
+
+      // Convert back to TimeOfDay
+      int endHour = endMinutes ~/ 60;
+      int endMinute = endMinutes % 60;
+
+      // Adjust for day overflow
+      endHour = endHour % 24;
+
+      final endTime = TimeOfDay(hour: endHour, minute: endMinute);
+
+      setState(() {
+        selectedEndTime = endTime;
+        _endTimeController.text = endTime.format(context);
+      });
+    }
+  }
+
+  Widget _buildTimeSelectionRow() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Check if we have enough width for a row layout
+        if (constraints.maxWidth > 600) {
+          return Row(
+            children: [
+              // Start Time
+              Expanded(
+                child: _buildTextField(
+                  controller: _startTimeController,
+                  label: 'Start Time',
+                  hint: 'Select',
+                  icon: Icons.access_time,
+                  readOnly: true,
+                  onTap: () => _selectStartTime(context),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Required';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Hours Dropdown
+              Expanded(child: _buildHoursDropdown()),
+              const SizedBox(width: 16),
+              // End Time
+              Expanded(
+                child: _buildTextField(
+                  controller: _endTimeController,
+                  label: 'End Time',
+                  hint: 'Calculated',
+                  icon: Icons.access_time,
+                  readOnly: true,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Required';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+            ],
+          );
+        } else {
+          // Vertical layout for smaller screens
+          return Column(
+            children: [
+              // Start Time
+              _buildTextField(
+                controller: _startTimeController,
+                label: 'Start Time',
+                hint: 'Select',
+                icon: Icons.access_time,
+                readOnly: true,
+                onTap: () => _selectStartTime(context),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Required';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              // Hours Dropdown
+              _buildHoursDropdown(),
+              const SizedBox(height: 16),
+              // End Time
+              _buildTextField(
+                controller: _endTimeController,
+                label: 'End Time',
+                hint: 'Calculated',
+                icon: Icons.access_time,
+                readOnly: true,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Required';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          );
+        }
+      },
+    );
+  }
+
+  Widget _buildHoursDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Shift Duration',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+            fontFamily: 'Inter',
+          ),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<int>(
+          isExpanded: true,
+          value: selectedHours,
+          decoration: InputDecoration(
+            hintText: 'Select Hours',
+            prefixIcon: Icon(Icons.timer_outlined, color: Color(0xFF5B6BF8)),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFF5B6BF8)),
+            ),
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 12,
+            ),
+          ),
+          items:
+              hourOptions.map((hours) {
+                return DropdownMenuItem<int>(
+                  value: hours,
+                  child: Text('$hours Hours'),
+                );
+              }).toList(),
+          onChanged: (value) {
+            if (selectedStartTime == null) {
+              // Show a snackbar to select start time first
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Please select a start time first'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+              return;
+            }
+
+            setState(() {
+              selectedHours = value;
+              // Clear previous pay rate when hours change
+              _payRateController.clear();
+            });
+
+            _calculateEndTime();
+          },
+          validator: (value) {
+            if (value == null) {
+              return 'Select shift duration';
+            }
+            return null;
+          },
+        ),
+      ],
+    );
+  }
+
   Future<void> _selectEndTime(BuildContext context) async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
@@ -124,9 +341,19 @@ class _PostJobScreenState extends State<PostJobScreen> {
     }
   }
 
-  // Method to post the job
-  // Method to post the job
-  // Method to post the job
+  String _generateCustomJobId() {
+    // Create a Random object for generating random numbers
+    final random = Random();
+
+    // Generate a random 4-digit number
+    final randomDigits =
+        random.nextInt(9000) +
+        1000; // This ensures a 4-digit number (1000-9999)
+
+    // Return the formatted job ID
+    return 'SH-$randomDigits';
+  }
+
   void _postJob() async {
     if (_formKey.currentState!.validate()) {
       setState(() {
@@ -136,47 +363,155 @@ class _PostJobScreenState extends State<PostJobScreen> {
       try {
         // Get the Supabase client instance
         final supabase = Supabase.instance.client;
+        final userId = supabase.auth.currentUser?.id;
 
-        // Create job data to be inserted
-        final jobData = {
-          'job_title': _jobTitleController.text,
-          'company': _companyController.text,
-          'location': _locationController.text,
-          'date': _dateController.text,
-          'start_time': _startTimeController.text,
-          'end_time': _endTimeController.text,
-          'pay_rate': double.parse(_payRateController.text),
-          'pay_currency': 'INR', // Hardcoded as per requirement
-          'supervisor_name': _supervisorNameController.text,
-          'supervisor_phone': _supervisorPhoneController.text,
-          'supervisor_email': _supervisorEmailController.text,
-          'job_pincode': int.parse(_jobPincodeController.text),
-          'website':
-              _websiteController.text.isEmpty ? null : _websiteController.text,
-          'dress_code': _dressCodeController.text,
-          'status': 'Active',
-          // These might be set by the database, but we'll include them
-          'created_at': DateTime.now().toIso8601String(),
-          'updated_at': DateTime.now().toIso8601String(),
-          // You may need to include the user_id to associate jobs with employers
-          'user_id': supabase.auth.currentUser?.id,
-        };
+        if (userId == null) {
+          throw Exception('User is not logged in');
+        }
 
-        print('Job data to be posted: $jobData');
+        // Get the number of positions and calculate required balance
+        final int numberOfPositions = int.parse(_positionsController.text);
+        final double requiredBalance =
+            numberOfPositions *
+            (double.tryParse(_payRateController.text) ?? 0.0);
 
-        // Insert the job data into the worker_job_listings table
-        final response = await supabase
-            .from('worker_job_listings')
-            .insert(jobData);
+        // Check wallet balance - using employer_id instead of user_id
+        final walletData =
+            await supabase
+                .from('employer_wallet')
+                .select('id, balance, currency')
+                .eq('employer_id', userId)
+                .maybeSingle();
 
-        print('Response from database: $response');
+        if (walletData == null) {
+          // No wallet exists
+          _showNoWalletDialog();
+          return;
+        }
+
+        // Parse balance (handling different types)
+        final dynamic balanceValue = walletData['balance'];
+        double walletBalance = 0.0;
+
+        if (balanceValue is int) {
+          walletBalance = balanceValue.toDouble();
+        } else if (balanceValue is double) {
+          walletBalance = balanceValue;
+        } else if (balanceValue is String) {
+          walletBalance = double.tryParse(balanceValue) ?? 0.0;
+        }
+
+        // Check if there's enough balance
+        if (walletBalance < requiredBalance) {
+          _showInsufficientBalanceDialog(requiredBalance, walletBalance);
+          return;
+        }
+
+        // Show confirmation dialog for balance deduction
+        final bool shouldProceed = await _showDeductionConfirmationDialog(
+          requiredBalance,
+        );
+
+        if (!shouldProceed) {
+          setState(() {
+            _isLoading = false;
+          });
+          return;
+        }
+
+        // Create a batch ID to group related positions
+        // Using a prefix "B-" followed by timestamp for easy identification
+        final batchId = 'B-${DateTime.now().millisecondsSinceEpoch}';
+
+        // List to store all created shift IDs
+        final List<String> createdShiftIds = [];
+
+        // For each position, create a separate shift record
+        for (int i = 0; i < numberOfPositions; i++) {
+          // Generate a unique custom job ID for each position
+          final customJobId = _generateCustomJobId();
+
+          // Prepare job data with the custom ID in shift_id
+          final jobData = {
+            // Do NOT set the primary 'id' field - let Supabase generate a UUID
+            'shift_id': customJobId,
+            'batch_id': batchId, // Add the batch ID
+            'position_number':
+                i + 1, // Track position number within batch (1-based)
+            'job_title': _ShiftTitleController.text,
+            'company': _companyController.text,
+            'number_of_positions': 1, // Each record represents 1 position
+            'location': _locationController.text,
+            'date': _dateController.text,
+            'start_time': _startTimeController.text,
+            'end_time': _endTimeController.text,
+            'pay_rate': double.parse(_payRateController.text),
+            'pay_currency': 'INR',
+            'supervisor_name': _supervisorNameController.text,
+            'supervisor_phone': _supervisorPhoneController.text,
+            'supervisor_email': _supervisorEmailController.text,
+            'job_pincode': int.parse(_ShiftPincodeController.text),
+            'website':
+                _websiteController.text.isEmpty
+                    ? null
+                    : _websiteController.text,
+            'dress_code': _dressCodeController.text,
+            'status': 'Active',
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+            'user_id': userId,
+          };
+
+          // Insert the job listing with our custom shift_id
+          final jobResponse =
+              await supabase
+                  .from('worker_job_listings')
+                  .insert(jobData)
+                  .select('id, shift_id')
+                  .single();
+
+          final shiftId = jobResponse['shift_id'];
+          createdShiftIds.add(shiftId);
+        }
+
+        // Deduct the amount from the wallet
+        final newBalance = walletBalance - requiredBalance;
+        final timestamp = DateTime.now().toIso8601String();
+
+        await supabase
+            .from('employer_wallet')
+            .update({'balance': newBalance, 'last_updated': timestamp})
+            .eq('id', walletData['id']);
+
+        // Record the transaction
+        await supabase.from('wallet_transactions').insert({
+          'wallet_id': walletData['id'],
+          'amount': -requiredBalance,
+          'transaction_type': 'job_posting',
+          'description':
+              'Deducted for posting $numberOfPositions position(s) for ${_ShiftTitleController.text} (Batch ID: $batchId)',
+          'status': 'completed',
+          'created_at': timestamp,
+        });
 
         // Show success message and navigate back
         if (mounted) {
+          await ActivityLogger.logJobPosting({
+            'job_title': _ShiftTitleController.text,
+            'company': _companyController.text,
+            'location': _locationController.text,
+            'pay_rate': double.parse(_payRateController.text),
+            'number_of_positions': int.parse(_positionsController.text),
+          });
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Job posted successfully!'),
+            SnackBar(
+              content: Text(
+                'Successfully posted $numberOfPositions positions! ' +
+                    'Batch ID: $batchId. ' +
+                    '₹${requiredBalance.toStringAsFixed(2)} has been deducted from your wallet.',
+              ),
               backgroundColor: Colors.green,
+              duration: Duration(seconds: 4),
             ),
           );
           Navigator.pop(context);
@@ -191,7 +526,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
             ),
           );
         }
-        print('Error saving job: $e');
+        print('Error in job posting process: $e');
       } finally {
         if (mounted) {
           setState(() {
@@ -202,13 +537,307 @@ class _PostJobScreenState extends State<PostJobScreen> {
     }
   }
 
+  void _showNoWalletDialog() {
+    setState(() {
+      _isLoading = false;
+    });
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Wallet Required'),
+            content: const Text(
+              'You need to set up a wallet to post Shifts. Please add funds to your wallet to continue.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  // Navigate to wallet setup screen
+                  // Replace with your actual wallet screen navigation
+                  Get.to(() => PaymentsScreen());
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).primaryColor,
+                ),
+                child: const Text('Set Up Wallet'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  // Show a dialog when balance is insufficient
+  void _showInsufficientBalanceDialog(double required, double available) {
+    setState(() {
+      _isLoading = false;
+    });
+
+    final formatter = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Insufficient Balance'),
+            content: Text(
+              'You need ${formatter.format(required)} to post this Shift, but your wallet only has ${formatter.format(available)}. Please add funds to your wallet to continue.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  // Navigate to add funds screen
+                  // Replace with your actual wallet screen navigation
+                  Get.to(() => PaymentsScreen());
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).primaryColor,
+                ),
+                child: const Text('Add Funds'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  // Show confirmation dialog for balance deduction
+  // Show confirmation dialog for balance deduction with improved styling
+  Future<bool> _showDeductionConfirmationDialog(double amount) async {
+    setState(() {
+      _isLoading = false;
+    });
+
+    final formatter = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
+    final int positions = int.parse(_positionsController.text);
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            title: Text(
+              'Confirm Shift Posting',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Inter',
+                color: Color(0xFF1F2937),
+              ),
+            ),
+            content: Container(
+              constraints: BoxConstraints(maxWidth: 400),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Charges information
+                  RichText(
+                    text: TextSpan(
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontFamily: 'Inter',
+                        color: Color(0xFF374151),
+                        height: 1.5,
+                      ),
+                      children: [
+                        TextSpan(text: 'You will be charged '),
+                        TextSpan(
+                          text: formatter.format(amount),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF5B6BF8),
+                          ),
+                        ),
+                        TextSpan(
+                          text:
+                              ' from your wallet for posting this Shift with ',
+                        ),
+                        TextSpan(
+                          text: '$positions position(s)',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        TextSpan(text: '.'),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: 16),
+
+                  // Calculation details
+                  Container(
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Color(0xFFF3F4F6),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Color(0xFFE5E7EB)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Breakdown:',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF4B5563),
+                            fontFamily: 'Inter',
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Per position charge:',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Color(0xFF6B7280),
+                                fontFamily: 'Inter',
+                              ),
+                            ),
+                            Text(
+                              _payRateController.text,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                fontFamily: 'Inter',
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Number of positions:',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Color(0xFF6B7280),
+                                fontFamily: 'Inter',
+                              ),
+                            ),
+                            Text(
+                              '$positions',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                fontFamily: 'Inter',
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 8),
+                        Divider(),
+                        SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Total amount:',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF374151),
+                                fontFamily: 'Inter',
+                              ),
+                            ),
+                            Text(
+                              formatter.format(amount),
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF5B6BF8),
+                                fontFamily: 'Inter',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: 16),
+
+                  // Confirmation question
+                  Text(
+                    'Do you want to proceed with this Shift posting?',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF374151),
+                      fontFamily: 'Inter',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  foregroundColor: Color(0xFF6B7280),
+                ),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    fontFamily: 'Inter',
+                  ),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color(0xFF5B6BF8),
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  elevation: 0,
+                ),
+                child: Text(
+                  'Confirm & Post',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'Inter',
+                  ),
+                ),
+              ),
+            ],
+            actionsPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          ),
+    );
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    return result ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF0F5FF),
       appBar: AppBar(
         title: const Text(
-          'Post a New Job',
+          'Post a New Shift',
           style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.white,
@@ -255,7 +884,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: const [
                               Text(
-                                'Create a New Job Listing',
+                                'Create a New Shift Listing',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 20,
@@ -265,7 +894,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
                               ),
                               SizedBox(height: 8),
                               Text(
-                                'Fill in the details below to post a new job opportunity',
+                                'Fill in the details below to post a new Shift opportunity',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 14,
@@ -295,7 +924,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text(
-                                'Job Details',
+                                'Shift Details',
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -304,15 +933,15 @@ class _PostJobScreenState extends State<PostJobScreen> {
                               ),
                               const SizedBox(height: 20),
 
-                              // Job Title
+                              // Shift Title
                               _buildTextField(
-                                controller: _jobTitleController,
-                                label: 'Job Title',
+                                controller: _ShiftTitleController,
+                                label: 'Shift Title',
                                 hint: 'e.g. Barista, Cashier, Server',
                                 icon: Icons.work_outline,
                                 validator: (value) {
                                   if (value == null || value.isEmpty) {
-                                    return 'Please enter job title';
+                                    return 'Please enter Shift title';
                                   }
                                   return null;
                                 },
@@ -336,20 +965,20 @@ class _PostJobScreenState extends State<PostJobScreen> {
                               _buildTextField(
                                 controller: _locationController,
                                 label: 'Location',
-                                hint: 'Job location (full address)',
+                                hint: 'Shift location (full address)',
                                 icon: Icons.location_on_outlined,
                                 validator: (value) {
                                   if (value == null || value.isEmpty) {
-                                    return 'Please enter job location';
+                                    return 'Please enter Shift location';
                                   }
                                   return null;
                                 },
                               ),
 
-                              // Job Pincode
+                              // Shift Pincode
                               _buildTextField(
-                                controller: _jobPincodeController,
-                                label: 'Job Location Pincode',
+                                controller: _ShiftPincodeController,
+                                label: 'Shift Location Pincode',
                                 hint: 'e.g. 400001',
                                 icon: Icons.pin_drop_outlined,
                                 keyboardType: TextInputType.number,
@@ -369,7 +998,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
                               _buildTextField(
                                 controller: _dateController,
                                 label: 'Date',
-                                hint: 'Select job date',
+                                hint: 'Select Shift date',
                                 icon: Icons.calendar_today,
                                 readOnly: true,
                                 onTap: () => _selectDate(context),
@@ -382,38 +1011,38 @@ class _PostJobScreenState extends State<PostJobScreen> {
                               ),
 
                               // Row for Start Time and End Time
+                              _buildTimeSelectionRow(), // Pay Rate
+                              // Pay RateExpanded(
                               Row(
                                 children: [
-                                  // Start Time
+                                  // Total Pay Rate
                                   Expanded(
                                     child: _buildTextField(
-                                      controller: _startTimeController,
-                                      label: 'Start Time',
-                                      hint: 'Select',
-                                      icon: Icons.access_time,
+                                      controller: _payRateController,
+                                      label: 'Total Pay (₹)',
+                                      hint: 'Calculated pay rate',
+                                      icon: Icons.payments_outlined,
+                                      prefixText: '₹ ',
                                       readOnly: true,
-                                      onTap: () => _selectStartTime(context),
-                                      validator: (value) {
-                                        if (value == null || value.isEmpty) {
-                                          return 'Required';
-                                        }
-                                        return null;
-                                      },
                                     ),
                                   ),
                                   const SizedBox(width: 16),
-                                  // End Time
+                                  // Hourly Pay Rate
                                   Expanded(
                                     child: _buildTextField(
-                                      controller: _endTimeController,
-                                      label: 'End Time',
-                                      hint: 'Select',
-                                      icon: Icons.access_time,
-                                      readOnly: true,
-                                      onTap: () => _selectEndTime(context),
+                                      controller: _hourlyRateController,
+                                      label: 'Hourly Pay (₹)',
+                                      hint: 'Enter hourly rate',
+                                      icon: Icons.payments_outlined,
+                                      prefixText: '₹ ',
+                                      keyboardType: TextInputType.number,
                                       validator: (value) {
                                         if (value == null || value.isEmpty) {
-                                          return 'Required';
+                                          return 'Please enter hourly rate';
+                                        }
+                                        if (double.tryParse(value) == null ||
+                                            double.parse(value) <= 0) {
+                                          return 'Please enter a valid rate';
                                         }
                                         return null;
                                       },
@@ -422,27 +1051,24 @@ class _PostJobScreenState extends State<PostJobScreen> {
                                 ],
                               ),
 
-                              // Pay Rate
+                              // Number of Positions
                               _buildTextField(
-                                controller: _payRateController,
-                                label: 'Pay Rate (₹)',
-                                hint: 'Hourly rate in INR',
-                                icon: Icons.payments_outlined,
-                                prefixText: '₹ ',
-                                keyboardType: TextInputType.numberWithOptions(
-                                  decimal: true,
-                                ),
+                                controller: _positionsController,
+                                label: 'Number of Positions',
+                                hint: 'How many workers needed',
+                                icon: Icons.people_outline,
+                                keyboardType: TextInputType.number,
                                 validator: (value) {
                                   if (value == null || value.isEmpty) {
-                                    return 'Please enter pay rate';
+                                    return 'Please enter number of positions';
                                   }
-                                  if (double.tryParse(value) == null) {
-                                    return 'Please enter a valid amount';
+                                  if (int.tryParse(value) == null ||
+                                      int.parse(value) < 1) {
+                                    return 'Please enter a valid number';
                                   }
                                   return null;
                                 },
                               ),
-
                               const SizedBox(height: 24),
                               const Text(
                                 'Contact Information',
@@ -466,7 +1092,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
                               _buildTextField(
                                 controller: _supervisorNameController,
                                 label: 'Supervisor Name',
-                                hint: 'Name of job supervisor',
+                                hint: 'Name of Shift supervisor',
                                 icon: Icons.person_outline,
                                 validator: (value) {
                                   if (value == null || value.isEmpty) {
@@ -529,7 +1155,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
                               _buildTextField(
                                 controller: _dressCodeController,
                                 label: 'Dress Code',
-                                hint: 'Required attire for the job',
+                                hint: 'Required attire for the Shift',
                                 icon: Icons.checkroom_outlined,
                                 maxLines: 3,
                                 validator: (value) {
@@ -555,7 +1181,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
                                     elevation: 2,
                                   ),
                                   child: const Text(
-                                    'Post Job',
+                                    'Post Shift',
                                     style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
@@ -575,6 +1201,85 @@ class _PostJobScreenState extends State<PostJobScreen> {
     );
   }
 
+  void _calculatePayRate() {
+    if (selectedHours != null) {
+      // Show a dialog to input hourly rate
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          final hourlyRateController = TextEditingController();
+
+          return AlertDialog(
+            title: Text('Enter Hourly Rate'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'You selected ${selectedHours} hours',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                SizedBox(height: 16),
+                TextField(
+                  controller: hourlyRateController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    hintText: 'Enter hourly rate in ₹',
+                    prefixText: '₹ ',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  // Validate hourly rate
+                  final hourlyRate = double.tryParse(hourlyRateController.text);
+
+                  if (hourlyRate != null && hourlyRate > 0) {
+                    // Calculate total pay rate
+                    final totalPayRate = hourlyRate * selectedHours!;
+
+                    setState(() {
+                      _payRateController.text = totalPayRate.toStringAsFixed(2);
+                    });
+
+                    Navigator.pop(context);
+                  } else {
+                    // Show error if invalid input
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Please enter a valid hourly rate'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                },
+                child: Text('Calculate Total Pay'),
+              ),
+            ],
+          );
+        },
+      );
+    } else {
+      // Show a snackbar to select hours first
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please select shift duration first'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   // Helper method to build consistent text fields
   Widget _buildTextField({
     required TextEditingController controller,
@@ -587,6 +1292,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
     String? prefixText,
     TextInputType keyboardType = TextInputType.text,
     String? Function(String?)? validator,
+    void Function(String)? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 20),

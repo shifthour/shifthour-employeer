@@ -7,41 +7,64 @@ import 'package:shifthour_employeer/Employer/employeer_profile.dart';
 import 'package:shifthour_employeer/Employer/employer_dashboard.dart';
 import 'package:shifthour_employeer/Employer/payments/employeer_payments_dashboard.dart';
 
-// GetX controller for navigation
+// GetX controller for navigation with permanent flag
 class NavigationController extends GetxController {
+  // Make this controller permanent to avoid recreation
+  static NavigationController get to => Get.find();
+
   // Observable for current index
   final RxInt currentIndex = 0.obs;
 
+  // Flag to control if navigation should happen
+  final RxBool enableNavigation = true.obs;
+
   // Method to change the selected index
   void changePage(int index) {
+    // Update the index
     currentIndex.value = index;
-    navigateToPage(index);
+
+    // Only navigate if navigation is enabled
+    if (enableNavigation.value) {
+      navigateToPage(index);
+    }
   }
 
   // Method to handle navigation based on index
   void navigateToPage(int index) {
     switch (index) {
       case 0:
-        // Navigate to Home (WorkerDashboard)
-        Get.offAll(() => const EmployerDashboard());
+        Get.off(() => const EmployerDashboard(), preventDuplicates: true);
         break;
       case 1:
-        // Navigate to Shifts (FindJobsPage)
-        Get.offAll(() => const Manage_Jobs_HomePage());
+        Get.off(() => const Manage_Jobs_HomePage(), preventDuplicates: true);
         break;
       case 2:
-        // Navigate to Earnings Dashboard
-        Get.offAll(() => const EmployerWorkersScreen());
+        Get.off(
+          () => const WorkerApplicationsScreen(),
+          preventDuplicates: true,
+        );
         break;
       case 3:
-        // Navigate to Earnings Dashboard
-        Get.offAll(() => const PaymentsScreen());
+        Get.off(() => const PaymentsScreen(), preventDuplicates: true);
         break;
       case 4:
-        // Navigate to Profile screen
-        Get.offAll(() => const EmployerProfileScreen());
+        Get.off(() => const EmployerProfileScreen(), preventDuplicates: true);
         break;
     }
+  }
+
+  // Helper method to safely set current tab without navigation
+  void setTabWithoutNavigation(int index) {
+    // Temporarily disable navigation
+    enableNavigation.value = false;
+
+    // Set the index
+    currentIndex.value = index;
+
+    // Re-enable navigation after a short delay
+    Future.delayed(const Duration(milliseconds: 100), () {
+      enableNavigation.value = true;
+    });
   }
 }
 
@@ -51,8 +74,11 @@ class ShiftHourBottomNavigation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Get the controller
-    final NavigationController controller = Get.put(NavigationController());
+    // Put the controller with permanent flag
+    final NavigationController controller = Get.put(
+      NavigationController(),
+      permanent: true, // This makes it permanent
+    );
 
     return Container(
       decoration: BoxDecoration(
@@ -121,27 +147,15 @@ class ShiftHourBottomNavigation extends StatelessWidget {
 mixin NavigationMixin {
   // Method to set the current tab when entering a page
   void setCurrentTab(int index) {
-    // Get the navigation controller and update the index
-    // without triggering navigation
-    final controller = Get.find<NavigationController>();
-    controller.currentIndex.value = index;
+    try {
+      // Try to find the existing controller
+      final controller = Get.find<NavigationController>();
+      // Use the safer method instead of directly setting the value
+      controller.setTabWithoutNavigation(index);
+    } catch (e) {
+      // If not found, put a new permanent one
+      final controller = Get.put(NavigationController(), permanent: true);
+      controller.setTabWithoutNavigation(index);
+    }
   }
 }
-
-// Example of how to use the mixin in a page
-/*
-class WorkerDashboard extends StatelessWidget with NavigationMixin {
-  const WorkerDashboard({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    // Set the current tab to Home (index 0)
-    setCurrentTab(0);
-    
-    return Scaffold(
-      // Your page content here
-      bottomNavigationBar: const ShiftHourBottomNavigation(),
-    );
-  }
-}
-*/
