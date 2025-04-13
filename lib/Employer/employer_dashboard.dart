@@ -43,6 +43,65 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
     });
   }
 
+  Future<String> _calculateTotalHoursTracked() async {
+    try {
+      // Get current user's ID
+      final currentUser = Supabase.instance.client.auth.currentUser;
+      if (currentUser == null) {
+        throw Exception('No user currently logged in');
+      }
+      final userId = currentUser.id;
+
+      // Fetch shift IDs posted by current user
+      final shiftIds = await Supabase.instance.client
+          .from('worker_job_listings')
+          .select('shift_id')
+          .eq('user_id', userId);
+
+      // Extract shift IDs into a list, handling null values
+      final shiftIdList =
+          shiftIds
+              .map((e) => e['shift_id'] as String?)
+              .where((id) => id != null)
+              .toList();
+
+      // Build the 'or' query for attendance records
+      final attendanceQuery = shiftIdList
+          .map((shiftId) {
+            return 'shift_id.eq.$shiftId';
+          })
+          .join(',');
+
+      // Fetch attendance records for those shift IDs
+      final attendanceRecords = await Supabase.instance.client
+          .from('worker_attendance')
+          .select()
+          .or(attendanceQuery);
+
+      // Calculate total minutes
+      int totalMinutes = 0;
+
+      attendanceRecords.forEach((record) {
+        final checkInTime = record['check_in_time'] as String?;
+        final checkOutTime = record['check_out_time'] as String?;
+
+        if (checkInTime != null && checkOutTime != null) {
+          final checkIn = DateTime.parse(checkInTime);
+          final checkOut = DateTime.parse(checkOutTime);
+          final durationMinutes = checkOut.difference(checkIn).inMinutes;
+          totalMinutes += durationMinutes;
+        }
+      });
+      // Format total duration
+      final durationHours = totalMinutes ~/ 60;
+      final remainingMinutes = totalMinutes % 60;
+      return '$durationHours hr $remainingMinutes ms';
+    } catch (e) {
+      print('Error calculating total hours tracked: $e');
+      return '0 hours 0 minutes';
+    }
+  }
+
   final PaymentsController _paymentsController = Get.put(PaymentsController());
   Future<void> _loadUserData() async {
     try {
@@ -70,7 +129,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                 .from('worker_job_listings')
                 .select('worker_job_applications!inner(*)')
                 .eq('user_id', user.id)
-                .eq('worker_job_applications.application_status', 'Applied')
+                .eq('worker_job_applications.application_status', 'In Progress')
                 .count();
 
         if (mounted) {
@@ -581,14 +640,23 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                           children: [
                             // Hours Tracked
                             Expanded(
-                              child: _buildStatCard(
-                                context,
-                                icon: Icons.timer_rounded,
-                                iconColor: Colors.orange,
-                                value: '1,248',
-                                label: 'Hours Tracked',
-                                growthValue: '+19%',
-                                growthColor: Colors.orange,
+                              child: FutureBuilder<String>(
+                                future: _calculateTotalHoursTracked(),
+                                builder: (context, snapshot) {
+                                  final hoursTracked =
+                                      snapshot.hasData
+                                          ? snapshot.data
+                                          : '0 hours 0 minutes';
+                                  return _buildStatCard(
+                                    context,
+                                    icon: Icons.timer_rounded,
+                                    iconColor: Colors.orange,
+                                    value: hoursTracked,
+                                    label: 'Hours Tracked',
+                                    growthValue: '+19%',
+                                    growthColor: Colors.orange,
+                                  );
+                                },
                               ),
                             ),
                             const SizedBox(width: 16),
@@ -938,12 +1006,11 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
   }
 
   // Helper methods to build UI components
-
   Widget _buildStatCard(
     BuildContext context, {
     required IconData icon,
     required Color iconColor,
-    required String value,
+    String? value,
     required String label,
     required String growthValue,
     required Color growthColor,
@@ -983,8 +1050,8 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                     style: TextStyle(
                       color: growthColor,
                       fontFamily: 'Inter',
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
@@ -992,7 +1059,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
             ),
             const SizedBox(height: 12),
             Text(
-              value,
+              value ?? '-',
               style: const TextStyle(
                 fontFamily: 'Inter Tight',
                 fontSize: 24,

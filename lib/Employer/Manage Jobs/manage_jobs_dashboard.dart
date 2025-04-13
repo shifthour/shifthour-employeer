@@ -224,6 +224,7 @@ class _ManageHomePageState extends State<Manage_Jobs_HomePage> {
           // 1. Job must have a worker assigned (already checked above)
           // 2. Job must be scheduled for today
           // 3. Job must not be completed
+          return job["application_status"]?.toString() == "In Progress";
 
           // Parse the job date - this might need adjustment based on your date format
           String jobDateStr = job["date"]?.toString() ?? "";
@@ -244,21 +245,8 @@ class _ManageHomePageState extends State<Manage_Jobs_HomePage> {
           // Check if the application_status is "Completed" - note the case sensitivity
           return job["application_status"]?.toString() == "Completed";
         } else if (assignedSubTab == "upcoming") {
-          // For upcoming jobs, check future dates
-          String jobDateStr = job["date"]?.toString() ?? "";
-
-          try {
-            // Try to parse the date if it's in a known format
-            DateTime jobDate = DateFormat('MMMM d, yyyy').parse(jobDateStr);
-
-            // Check if job date is in the future
-            return jobDate.isAfter(today) &&
-                job["application_status"]?.toString() != "Completed" &&
-                job["application_status"]?.toString() != "Cancelled";
-          } catch (e) {
-            print("Error parsing date: $e for job: ${job["job_title"]}");
-            return false;
-          }
+          // Simply check if the application_status is "Upcoming"
+          return job["application_status"]?.toString() == "Upcoming";
         }
       } else if (mainTab == "unassigned") {
         // Show jobs that don't have a worker assigned
@@ -332,35 +320,6 @@ class _ManageHomePageState extends State<Manage_Jobs_HomePage> {
 
         title: 'Shift Management',
         centerTitle: false,
-        actions: [
-          // Search field
-          const SizedBox(width: 12),
-          // Download Button
-          Container(
-            height: 40,
-            width: 40,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              color: Colors.white,
-              border: Border.all(color: Colors.blue.shade100),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Avatar
-          const CircleAvatar(
-            radius: 16,
-            backgroundColor: Colors.blue,
-            child: Text(
-              'JD',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-        ],
       ),
       bottomNavigationBar: const ShiftHourBottomNavigation(),
       body: OrientationBuilder(
@@ -1012,15 +971,6 @@ class JobCard extends StatelessWidget {
                 ),
 
                 // Favorite Icon
-                IconButton(
-                  icon: Icon(
-                    Icons.favorite_border,
-                    color: isDark ? Colors.grey : Colors.grey.shade400,
-                  ),
-                  onPressed: () {
-                    // Implement favorite functionality
-                  },
-                ),
               ],
             ),
 
@@ -1135,9 +1085,31 @@ class JobCard extends StatelessWidget {
               ),
 
             // View Details Button (right-aligned)
+            // View Details Button (right-aligned)
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                if (!hasWorkerAssigned)
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      // Navigate to PostShiftScreen with the specific job ID
+                      Get.to(
+                        () => PostShiftScreen(jobId: job['shift_id']),
+                      )?.then((result) {
+                        if (result == true) {
+                          // Refresh jobs list if update was successful
+                          // fetchJobs(); // Assuming this is a method to reload jobs
+                        }
+                      });
+                    },
+                    icon: const Icon(Icons.edit),
+                    label: const Text('Edit Job'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue.shade50,
+                      foregroundColor: Colors.blue.shade700,
+                    ),
+                  ),
+                SizedBox(width: 10),
                 ElevatedButton(
                   onPressed: () {
                     // Show job details in a popup

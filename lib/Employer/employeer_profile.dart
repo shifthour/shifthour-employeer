@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:shifthour_employeer/Employer/Business%20Kyc/kyc.dart';
 import 'package:shifthour_employeer/Employer/employer_dashboard.dart';
 import 'package:shifthour_employeer/const/Bottom_Navigation.dart';
 import 'package:shifthour_employeer/const/Standard_Appbar.dart';
@@ -68,7 +69,10 @@ class EmployerProfileController extends GetxController {
   final emailAddress = ''.obs;
   final contactName = ''.obs;
   final alternateContact = 'Slack: @techvision'.obs;
-
+  final panNumber = ''.obs;
+  final panPhotoUrl = ''.obs;
+  final incorporationCertificateUrl = ''.obs;
+  final isVerified = false.obs;
   // Verification Status
   final verificationProgress = 0.7.obs;
 
@@ -81,6 +85,27 @@ class EmployerProfileController extends GetxController {
       final controller = Get.find<NavigationController>();
       controller.currentIndex.value = 4;
     });
+  }
+
+  Future<void> loadKycInformation(String userId) async {
+    try {
+      final response =
+          await supabase
+              .from('business_verifications')
+              .select()
+              .eq('user_id', userId)
+              .maybeSingle();
+
+      if (response != null) {
+        panNumber.value = response['pan_number'] ?? '';
+        panPhotoUrl.value = response['pan_photo_url'] ?? '';
+        incorporationCertificateUrl.value =
+            response['incorporation_certificate_url'] ?? '';
+        isVerified.value = response['is_verified'] ?? false;
+      }
+    } catch (e) {
+      print('Error loading KYC information: $e');
+    }
   }
 
   Future<void> loadEmployerFromSupabase() async {
@@ -114,6 +139,9 @@ class EmployerProfileController extends GetxController {
 
       // Update UI observables with the loaded data
       updateUIFromEmployer(employerData);
+
+      // Load KYC information
+      await loadKycInformation(currentUser.id);
     } catch (e) {
       hasError.value = true;
       errorMessage.value = e.toString();
@@ -124,7 +152,7 @@ class EmployerProfileController extends GetxController {
     } finally {
       isLoading.value = false;
     }
-  } // Fallback method to load all employers
+  }
 
   Future<void> loadAllEmployers() async {
     try {
@@ -182,6 +210,250 @@ class EmployerProfileController extends GetxController {
 
     // For demo purposes, return a sample ID
     return '9367f1d8-4441-42e9-a783-cb073fe96434';
+  }
+
+  Widget _buildKycInformation(
+    BuildContext context,
+    EmployerProfileController controller,
+  ) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.shade300,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('KYC Information', style: theme.textTheme.titleMedium),
+              Obx(
+                () => Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        controller.isVerified.value
+                            ? Colors.green.shade100
+                            : Colors.orange.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    controller.isVerified.value ? 'Verified' : 'Pending',
+                    style: TextStyle(
+                      color:
+                          controller.isVerified.value
+                              ? Colors.green.shade800
+                              : Colors.orange.shade800,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // PAN Number
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'PAN Number',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    Obx(
+                      () => Text(
+                        controller.panNumber.value.isEmpty
+                            ? 'Not provided'
+                            : controller.panNumber.value,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // Document previews
+          Row(
+            children: [
+              // PAN Card Preview
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'PAN Card',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Obx(
+                      () =>
+                          controller.panPhotoUrl.value.isNotEmpty
+                              ? Container(
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.grey.shade300,
+                                  ),
+                                  image: DecorationImage(
+                                    image: NetworkImage(
+                                      controller.panPhotoUrl.value,
+                                    ),
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              )
+                              : Container(
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.grey.shade300,
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'No document',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 16),
+
+              // Incorporation Certificate Preview
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Incorporation Certificate',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Obx(
+                      () =>
+                          controller
+                                  .incorporationCertificateUrl
+                                  .value
+                                  .isNotEmpty
+                              ? Container(
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.grey.shade300,
+                                  ),
+                                  image: DecorationImage(
+                                    image: NetworkImage(
+                                      controller
+                                          .incorporationCertificateUrl
+                                          .value,
+                                    ),
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              )
+                              : Container(
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.grey.shade300,
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'No document',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // Verify Button (if not verified)
+          Obx(
+            () =>
+                controller.isVerified.value
+                    ? SizedBox()
+                    : Padding(
+                      padding: const EdgeInsets.only(top: 16.0),
+                      child: Center(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            // Navigate to verification form
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder:
+                                    (context) => StandaloneVerificationForm(
+                                      onComplete:
+                                          () =>
+                                              controller
+                                                  .loadEmployerFromSupabase(),
+                                    ),
+                              ),
+                            );
+                          },
+                          icon: Icon(Icons.verified_user),
+                          label: Text('Complete Verification'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+          ),
+        ],
+      ),
+    );
   }
 
   // Method to update UI variables from loaded employer data
@@ -249,6 +521,405 @@ class TeamMember {
 
 class EmployerProfileScreen extends StatelessWidget {
   const EmployerProfileScreen({Key? key}) : super(key: key);
+  // Add this method to the EmployerProfileScreen class
+  void _showImagePopup(BuildContext context, String imageUrl, String title) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: EdgeInsets.all(16),
+          child: Container(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width,
+              maxHeight: MediaQuery.of(context).size.height * 0.8,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header with title and close button
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+                Divider(),
+                // Image container with scroll capability
+                Flexible(
+                  child: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 3.0,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Image.network(
+                        imageUrl,
+                        fit: BoxFit.contain,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Center(
+                            child: CircularProgressIndicator(
+                              value:
+                                  loadingProgress.expectedTotalBytes != null
+                                      ? loadingProgress.cumulativeBytesLoaded /
+                                          loadingProgress.expectedTotalBytes!
+                                      : null,
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          return Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.error_outline,
+                                  color: Colors.red,
+                                  size: 48,
+                                ),
+                                SizedBox(height: 16),
+                                Text(
+                                  "Failed to load image",
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildKycInformation(
+    BuildContext context,
+    EmployerProfileController controller,
+  ) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.shade300,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('KYC Information', style: theme.textTheme.titleMedium),
+              Obx(
+                () => Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        controller.isVerified.value
+                            ? Colors.green.shade100
+                            : Colors.orange.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    controller.isVerified.value ? 'Verified' : 'Pending',
+                    style: TextStyle(
+                      color:
+                          controller.isVerified.value
+                              ? Colors.green.shade800
+                              : Colors.orange.shade800,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // PAN Number
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'PAN Number',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    Obx(
+                      () => Text(
+                        controller.panNumber.value.isEmpty
+                            ? 'Not provided'
+                            : controller.panNumber.value,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // Document previews
+          Row(
+            children: [
+              // PAN Card Preview
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'PAN Card',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Obx(
+                      () =>
+                          controller.panPhotoUrl.value.isNotEmpty
+                              ? GestureDetector(
+                                onTap:
+                                    () => _showImagePopup(
+                                      context,
+                                      controller.panPhotoUrl.value,
+                                      'PAN Card',
+                                    ),
+                                child: Stack(
+                                  children: [
+                                    Container(
+                                      height: 100,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: Colors.grey.shade300,
+                                        ),
+                                        image: DecorationImage(
+                                          image: NetworkImage(
+                                            controller.panPhotoUrl.value,
+                                          ),
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                    ),
+                                    // Tap to view overlay
+                                    Positioned.fill(
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: Center(
+                                          child: Icon(
+                                            Icons.zoom_in,
+                                            color: Colors.white,
+                                            size: 28,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                              : Container(
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.grey.shade300,
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'No document',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 16),
+
+              // Incorporation Certificate Preview
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Incorporation Certificate',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Obx(
+                      () =>
+                          controller
+                                  .incorporationCertificateUrl
+                                  .value
+                                  .isNotEmpty
+                              ? GestureDetector(
+                                onTap:
+                                    () => _showImagePopup(
+                                      context,
+                                      controller
+                                          .incorporationCertificateUrl
+                                          .value,
+                                      'Incorporation Certificate',
+                                    ),
+                                child: Stack(
+                                  children: [
+                                    Container(
+                                      height: 100,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: Colors.grey.shade300,
+                                        ),
+                                        image: DecorationImage(
+                                          image: NetworkImage(
+                                            controller
+                                                .incorporationCertificateUrl
+                                                .value,
+                                          ),
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                    ),
+                                    // Tap to view overlay
+                                    Positioned.fill(
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: Center(
+                                          child: Icon(
+                                            Icons.zoom_in,
+                                            color: Colors.white,
+                                            size: 28,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                              : Container(
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.grey.shade300,
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'No document',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // Verify Button (if not verified)
+          Obx(
+            () =>
+                controller.isVerified.value
+                    ? SizedBox()
+                    : Padding(
+                      padding: const EdgeInsets.only(top: 16.0),
+                      child: Center(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            // Navigate to verification form
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder:
+                                    (context) => StandaloneVerificationForm(
+                                      onComplete:
+                                          () =>
+                                              controller
+                                                  .loadEmployerFromSupabase(),
+                                    ),
+                              ),
+                            );
+                          },
+                          icon: Icon(Icons.verified_user),
+                          label: Text('Complete Verification'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -263,42 +934,6 @@ class EmployerProfileScreen extends StatelessWidget {
 
         title: 'Employer Profile',
         centerTitle: false,
-        actions: [
-          const SizedBox(width: 12),
-          Container(
-            height: 40,
-            width: 40,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              color: Colors.white,
-              border: Border.all(color: Colors.blue.shade100),
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.download, size: 16, color: Colors.blue),
-              onPressed: () {
-                // Download functionality
-              },
-            ),
-          ),
-          const SizedBox(width: 12),
-          Obx(
-            () => CircleAvatar(
-              radius: 16,
-              backgroundColor: Colors.blue,
-              child: Text(
-                controller.contactName.value.isNotEmpty
-                    ? controller.contactName.value.substring(0, 1).toUpperCase()
-                    : 'U',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-        ],
       ),
       bottomNavigationBar: const ShiftHourBottomNavigation(),
       body: Obx(() {
@@ -339,6 +974,10 @@ class EmployerProfileScreen extends StatelessWidget {
 
             // Contact Information
             _buildContactInformation(context, controller),
+            const SizedBox(height: 16),
+
+            // KYC Information
+            _buildKycInformation(context, controller),
             const SizedBox(height: 16),
           ],
         );

@@ -472,6 +472,33 @@ class WorkerApplicationsController extends GetxController {
         updateData['feedback'] = feedback;
       }
 
+      // Log activity with enriched data
+      if (checkInRecord != null) {
+        // Create a merged record with both checkout and application data
+        Map<String, dynamic> logData = {...checkInRecord};
+
+        // Try to find the original application to get worker details
+        try {
+          final applicationData =
+              await supabase
+                  .from('worker_job_applications')
+                  .select('full_name, job_title')
+                  .eq('id', checkInRecord['application_id'])
+                  .single();
+
+          if (applicationData != null) {
+            logData['full_name'] = applicationData['full_name'];
+            if (logData['job_title'] == null) {
+              logData['job_title'] = applicationData['job_title'];
+            }
+          }
+        } catch (e) {
+          print('Could not fetch worker details for log: $e');
+        }
+
+        await ActivityLogger.logWorkerCheckOut(logData);
+      }
+
       // Update attendance record
       await supabase
           .from('worker_attendance')
@@ -484,15 +511,8 @@ class WorkerApplicationsController extends GetxController {
             .from('worker_job_applications')
             .update({'application_status': 'Completed'})
             .eq('shift_id', shiftId);
-        // .eq('id', applicationId);
       }
 
-      if (checkInRecord != null) {
-        await ActivityLogger.logWorkerCheckOut(
-          checkInRecord,
-          // feedback: feedback
-        );
-      }
       // Check if worker_id exists before updating worker ratings
       if (checkInRecord['worker_id'] != null) {
         // Optionally, update worker's overall ratings
@@ -526,9 +546,8 @@ class WorkerApplicationsController extends GetxController {
 
       rethrow;
     }
-  }
+  } // Helper method to build the check button (add this to your WorkerApplicationsScreen class)
 
-  // Helper method to build the check button (add this to your WorkerApplicationsScreen class)
   Widget _buildCheckButton(
     BuildContext context,
     Map<String, dynamic> application,
@@ -622,28 +641,54 @@ class WorkerApplicationsController extends GetxController {
         return false;
       }
 
-      // Parse time from string like "10:00 AM" to DateTime
-      DateTime shiftTime;
-      if (application['start_time'] != null) {
-        shiftTime = _parseTime(application['start_time'].toString());
-      } else if (application['shift_start_time'] != null) {
-        shiftTime = _parseTime(application['shift_start_time'].toString());
+      // For shifts scheduled for today, check if they're still in the future
+      if (shiftDate.year == now.year &&
+          shiftDate.month == now.month &&
+          shiftDate.day == now.day) {
+        // Parse time from string like "10:00 AM" to DateTime
+        DateTime shiftTime;
+        if (application['start_time'] != null) {
+          shiftTime = _parseTime(application['start_time'].toString());
+        } else if (application['shift_start_time'] != null) {
+          shiftTime = _parseTime(application['shift_start_time'].toString());
+        } else {
+          // Default to start of day if no time specified
+          shiftTime = DateTime(2022, 1, 1, 0, 0);
+        }
+
+        // Combine date and time
+        final shiftDateTime = DateTime(
+          shiftDate.year,
+          shiftDate.month,
+          shiftDate.day,
+          shiftTime.hour,
+          shiftTime.minute,
+        );
+
+        // Debug logs
+        print('Current time: $now');
+        print('Shift date/time for ${application['shift_id']}: $shiftDateTime');
+        print('Is after: ${shiftDateTime.isAfter(now)}');
+
+        // For today's shifts, check the specific time
+        return shiftDateTime.isAfter(now);
       } else {
-        // Default to start of day if no time specified
-        shiftTime = DateTime(2022, 1, 1, 0, 0);
+        // For future dates, consider them upcoming regardless of time
+        final today = DateTime(now.year, now.month, now.day);
+        final shiftDay = DateTime(
+          shiftDate.year,
+          shiftDate.month,
+          shiftDate.day,
+        );
+
+        // Debug logs
+        print('Today: $today');
+        print('Shift day for ${application['shift_id']}: $shiftDay');
+        print('Is after or same day: ${shiftDay.compareTo(today) >= 0}');
+
+        // A shift is upcoming if the date is today or later
+        return shiftDay.compareTo(today) >= 0;
       }
-
-      // Combine date and time
-      final shiftDateTime = DateTime(
-        shiftDate.year,
-        shiftDate.month,
-        shiftDate.day,
-        shiftTime.hour,
-        shiftTime.minute,
-      );
-
-      // Check if the shift is in the future
-      return shiftDateTime.isAfter(now);
     } catch (e) {
       print('Error determining if shift is upcoming: $e');
       return false; // Default to not showing cancel button if there's an error
@@ -1046,8 +1091,10 @@ class WorkerApplicationsController extends GetxController {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16.0),
         ),
+        elevation: 0,
+        backgroundColor: Colors.white,
         child: Container(
-          padding: EdgeInsets.all(16.0),
+          padding: EdgeInsets.all(24.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -1058,46 +1105,116 @@ class WorkerApplicationsController extends GetxController {
                   Text(
                     'Application Details',
                     style: TextStyle(
-                      fontSize: 18.0,
+                      fontSize: 20.0,
                       fontWeight: FontWeight.bold,
+                      color: Color(0xFF5B6BF8),
+                      fontFamily: 'Inter',
                     ),
                   ),
-                  IconButton(
-                    icon: Icon(Icons.close),
-                    onPressed: () => Get.back(),
+                  InkWell(
+                    onTap: () => Get.back(),
+                    child: Container(
+                      padding: EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.close,
+                        size: 20,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
                   ),
                 ],
               ),
-              Divider(),
-              SizedBox(height: 8.0),
+              SizedBox(height: 16.0),
+              Divider(color: Colors.grey.shade200, thickness: 1),
+              SizedBox(height: 16.0),
               _buildInfoRow('Full Name', application['full_name']),
               _buildInfoRow('Phone', application['phone_number']),
               _buildInfoRow('Email', application['email']),
               if (application['status'] != null)
-                _buildInfoRow('Status', application['status']),
+                _buildStatusRow('Status', application['status']),
               if (application['submission_date'] != null)
                 _buildInfoRow('Submitted', application['submission_date']),
-              SizedBox(height: 16.0),
+              SizedBox(height: 24.0),
               Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  TextButton(
-                    onPressed: () => Get.back(),
-                    child: Text('Cancel'),
-                  ),
-                  SizedBox(width: 8.0),
                   ElevatedButton(
-                    onPressed: () {
-                      // Add action for viewing more details or processing application
-                      Get.back();
-                    },
-                    child: Text('Process'),
+                    onPressed: () => Get.back(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xFF5B6BF8),
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      'Close',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
                   ),
                 ],
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildStatusRow(String label, String status) {
+    final Color statusColor =
+        status.toLowerCase() == 'approved'
+            ? Colors.green
+            : status.toLowerCase() == 'rejected'
+            ? Colors.red
+            : status.toLowerCase() == 'pending'
+            ? Colors.amber.shade700
+            : Colors.blue;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 14,
+              fontFamily: 'Inter',
+            ),
+          ),
+          SizedBox(height: 4),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: statusColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              status,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: statusColor,
+                fontFamily: 'Inter',
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1261,23 +1378,6 @@ class WorkerApplicationsScreen extends StatelessWidget {
         },
         title: 'Worker Applications',
         centerTitle: false,
-        actions: [
-          const SizedBox(width: 12),
-          // Avatar
-          const CircleAvatar(
-            radius: 16,
-            backgroundColor: Colors.blue,
-            child: Text(
-              'JD',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-        ],
       ),
       bottomNavigationBar: const ShiftHourBottomNavigation(),
       body: SafeArea(
@@ -1480,6 +1580,19 @@ class WorkerApplicationsScreen extends StatelessWidget {
     final bool isCompleted = status.toString().toLowerCase() == 'completed';
     final bool isInProgress = status.toString().toLowerCase() == 'in progress';
     final bool isUpcoming = controller.isUpcomingShift(application);
+    // In the _buildApplicationCard method, add this before the Wrap widget:
+    print('Application ID: ${application['id']}');
+    print('Status: ${application['application_status']}');
+    print('Is Upcoming: $isUpcoming');
+    print('Is Cancelled: $isCancelled');
+    print('Is Completed: $isCompleted');
+    print('Is In Progress: $isInProgress');
+    print(
+      'Date fields: date=${application['date']}, shift_date=${application['shift_date']}',
+    );
+    print(
+      'Time fields: start_time=${application['start_time']}, shift_start_time=${application['shift_start_time']}',
+    );
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
@@ -1622,7 +1735,9 @@ class WorkerApplicationsScreen extends StatelessWidget {
               alignment: WrapAlignment.end,
               children: [
                 // Cancel Shift Button - Show only for upcoming shifts that are not cancelled
-                if (isUpcoming && !isCancelled && !isCompleted && !isInProgress)
+                // Cancel Shift Button - Show only for upcoming shifts that are not cancelled
+                // In the _buildApplicationCard method, modify the condition to:
+                if (application['application_status'] == 'Upcoming')
                   ElevatedButton(
                     onPressed:
                         () => controller.cancelShift(application, context),
@@ -1657,14 +1772,7 @@ class WorkerApplicationsScreen extends StatelessWidget {
 
                     // If already checked out, show Done with a grey color
                     if (checkStatus == 'checked_out') {
-                      return ElevatedButton(
-                        onPressed:
-                            null, // Disable button as process is complete
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.grey,
-                        ),
-                        child: Text('Done'),
-                      );
+                      return Container();
                     }
 
                     // Check if this application is in loading state (during check-in/out)
@@ -1702,7 +1810,10 @@ class WorkerApplicationsScreen extends StatelessWidget {
 
                     // Regular button for check-in or check-out
                     return ElevatedButton(
-                      onPressed: () => controller.checkIn(application, context),
+                      onPressed: () async {
+                        await controller.checkIn(application, context);
+                        await controller.refreshApplications();
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor:
                             checkStatus == 'checked_in'

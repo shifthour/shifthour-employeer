@@ -58,32 +58,6 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
         },
         title: 'Payments',
         centerTitle: false,
-        actions: [
-          const SizedBox(width: 12),
-          Container(
-            height: 40,
-            width: 40,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              color: Colors.white,
-              border: Border.all(color: Colors.blue.shade100),
-            ),
-          ),
-          const SizedBox(width: 12),
-          const CircleAvatar(
-            radius: 16,
-            backgroundColor: Colors.blue,
-            child: Text(
-              'JD',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-        ],
       ),
       // Use the standard bottom navigation
       bottomNavigationBar: const ShiftHourBottomNavigation(),
@@ -103,58 +77,9 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
             const SizedBox(height: 16),
 
             // Tabs for Payments and Wallet
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.grey.shade200,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children:
-                    _tabs.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final title = entry.value;
-                      final isSelected = _selectedTabIndex == index;
-
-                      return Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _selectedTabIndex = index;
-                            });
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              color: isSelected ? Colors.blue.shade700 : null,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Center(
-                              child: Text(
-                                title,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color:
-                                      isSelected
-                                          ? Colors.white
-                                          : Colors.grey.shade700,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-              ),
-            ),
-            const SizedBox(height: 16),
 
             // Tab content
-            Expanded(
-              child:
-                  _selectedTabIndex == 0
-                      ? _buildPaymentsTab(context, isSmallScreen)
-                      : _buildWalletTab(context, isSmallScreen),
-            ),
+            Expanded(child: _buildWalletTab(context, isSmallScreen)),
           ],
         ),
       ),
