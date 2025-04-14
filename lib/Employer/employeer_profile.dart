@@ -965,8 +965,8 @@ class EmployerProfileScreen extends StatelessWidget {
             const SizedBox(height: 16),
 
             // Verification Status
-            _buildVerificationStatus(context, controller),
-            const SizedBox(height: 16),
+            // _buildVerificationStatus(context, controller),
+            //const SizedBox(height: 16),
 
             // Company Information
             _buildCompanyInformation(context, controller),
@@ -1158,26 +1158,6 @@ class EmployerProfileScreen extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Company Description',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.grey.shade600,
-                ),
-              ),
-              Obx(
-                () => Text(
-                  controller.companyDescription.value.isEmpty
-                      ? 'No description available.'
-                      : controller.companyDescription.value,
-                  style: theme.textTheme.bodyMedium,
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );
@@ -1222,19 +1202,6 @@ class EmployerProfileScreen extends StatelessWidget {
                       () => Text(
                         controller.contactName.value,
                         style: theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Business Address',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.grey.shade600,
                       ),
                     ),
                   ],

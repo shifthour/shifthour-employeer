@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 
 class WorkerApplicationsController extends GetxController {
   // Reactive variables for state management
+  final RxBool isStatusLoading = true.obs;
   final RxList<Map<String, dynamic>> applications =
       <Map<String, dynamic>>[].obs;
   final RxBool isLoading = true.obs;
@@ -19,9 +20,12 @@ class WorkerApplicationsController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    fetchApplications();
+    fetchApplications().then((_) {
+      // Fetch all statuses in one go after applications are loaded
+      _preloadAllStatuses();
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Get the navigation controller and set index without triggering navigation
       final controller = Get.find<NavigationController>();
       controller.currentIndex.value = 2;
     });
@@ -30,6 +34,52 @@ class WorkerApplicationsController extends GetxController {
   // Add these at the top of your WorkerApplicationsController class
   final RxMap<String, bool> checkInLoading = <String, bool>{}.obs;
   final RxMap<String, RxString> checkInStatuses = <String, RxString>{}.obs;
+  Future<void> _preloadAllStatuses() async {
+    try {
+      isStatusLoading.value = true;
+
+      // Skip if no applications
+      if (applications.isEmpty) {
+        isStatusLoading.value = false;
+        return;
+      }
+
+      // Prepare a list of application IDs to batch fetch
+      final appIds = applications.map((app) => app['id'].toString()).toList();
+
+      // Query all statuses in one go
+      final response = await supabase
+          .from('worker_attendance')
+          .select('application_id, status')
+          .inFilter('application_id', appIds)
+          .order('created_at', ascending: false);
+
+      // Group by application_id, keeping only the most recent status
+      final Map<String, String> latestStatuses = {};
+      for (var record in response) {
+        final appId = record['application_id'].toString();
+        if (!latestStatuses.containsKey(appId)) {
+          latestStatuses[appId] = record['status'];
+        }
+      }
+
+      // Initialize all statuses at once
+      for (var app in applications) {
+        final appId = app['id'].toString();
+        final status = latestStatuses[appId] ?? 'not_checked_in';
+
+        if (!checkInStatuses.containsKey(appId)) {
+          checkInStatuses[appId] = RxString(status);
+        } else {
+          checkInStatuses[appId]!.value = status;
+        }
+      }
+    } catch (e) {
+      print('Error preloading statuses: $e');
+    } finally {
+      isStatusLoading.value = false;
+    }
+  }
 
   // Complete implementation of checkIn method
   Future<void> checkIn(
@@ -1759,6 +1809,9 @@ class WorkerApplicationsScreen extends StatelessWidget {
                 if (!isCancelled)
                   Obx(() {
                     // Get current status from our cache
+                    if (controller.isStatusLoading.value) {
+                      return const SizedBox.shrink(); // No flash of loading buttons
+                    }
                     final checkStatus =
                         controller.checkInStatuses[appId]?.value ?? 'loading';
 

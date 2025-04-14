@@ -121,6 +121,11 @@ class _StandaloneVerificationFormState
 
   Future<void> _uploadDocuments() async {
     try {
+      setState(() {
+        _isUploading = true;
+        _errorMessage = '';
+      });
+
       final user = Supabase.instance.client.auth.currentUser;
       print('Current User: ${user?.id}'); // Debug print
       if (user == null) {
@@ -151,21 +156,40 @@ class _StandaloneVerificationFormState
         incorporationName,
       );
 
-      // Insert into business_verifications table
-      final insertResponse =
-          await Supabase.instance.client.from('business_verifications').upsert({
-            'user_id': user.id,
-            'email': userEmail, // Add email to the record
-            'pan_number': _panController.text,
-            'pan_photo_url': panPhotoPath,
-            'incorporation_certificate_url': incorporationPath,
-            'is_verified': true, // Set to true immediately
-            'created_at': DateTime.now().toIso8601String(),
-            'updated_at': DateTime.now().toIso8601String(),
-          }, onConflict: 'user_id') // If record exists, update it
-          .select();
+      // First check if a record exists
+      final existingRecord =
+          await Supabase.instance.client
+              .from('business_verifications')
+              .select()
+              .eq('email', userEmail!)
+              .maybeSingle();
 
-      print('Insert/Update Response: $insertResponse');
+      // Then either update or insert
+      if (existingRecord != null) {
+        // Update existing record
+        await Supabase.instance.client
+            .from('business_verifications')
+            .update({
+              'pan_number': _panController.text,
+              'pan_photo_url': panPhotoPath,
+              'incorporation_certificate_url': incorporationPath,
+              'is_verified': true,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('email', userEmail);
+      } else {
+        // Insert new record
+        await Supabase.instance.client.from('business_verifications').insert({
+          'user_id': user.id,
+          'email': userEmail,
+          'pan_number': _panController.text,
+          'pan_photo_url': panPhotoPath,
+          'incorporation_certificate_url': incorporationPath,
+          'is_verified': true,
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
 
       // Show success message and close the form
       if (mounted) {
@@ -177,16 +201,35 @@ class _StandaloneVerificationFormState
           ),
         );
 
+        // Call onComplete callback if provided
+        if (widget.onComplete != null) {
+          widget.onComplete!();
+        }
+
         _closeForm();
       }
     } catch (e, stackTrace) {
-      print('Full Error Details: $e');
+      // Log the detailed error for developers
+      print('Database Error: $e');
       print('Stack Trace: $stackTrace');
 
-      setState(() {
-        _errorMessage = 'Failed to upload documents: ${e.toString()}';
-        _isUploading = false;
-      });
+      if (mounted) {
+        // Show a user-friendly message
+        setState(() {
+          _isUploading = false;
+          _errorMessage =
+              'We couldn\'t save your information. Please try again later.';
+        });
+
+        // Show a visual notification
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Verification didn\'t complete. Please try again.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 

@@ -524,7 +524,9 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
             children: [
               // Header
               // Verification Alert
-              if (!_isBusinessVerified)
+              if (_isLoading)
+                const SizedBox.shrink() // or CircularProgressIndicator()
+              else if (!_isBusinessVerified)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
                   child: Container(
